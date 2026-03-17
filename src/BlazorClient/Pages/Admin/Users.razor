@@ -1,0 +1,138 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject IAdminApiService AdminApi
+
+<PageTitle>User Management</PageTitle>
+
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-800">👥 User Management</h1>
+        <a href="/admin" class="text-sm text-blue-600 hover:underline">← Back to Dashboard</a>
+    </div>
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else if (_users is not null)
+    {
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <span class="text-sm text-gray-500">@_users.TotalCount users total</span>
+                <div class="flex gap-2">
+                    <button @onclick="() => ChangePage(_page - 1)" disabled="@(_page <= 1)"
+                            class="btn-secondary text-xs disabled:opacity-40">← Prev</button>
+                    <span class="text-sm text-gray-500">Page @_page / @_users.TotalPages</span>
+                    <button @onclick="() => ChangePage(_page + 1)" disabled="@(_page >= _users.TotalPages)"
+                            class="btn-secondary text-xs disabled:opacity-40">Next →</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Roles</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-100">
+                        @foreach (var user in _users.Items)
+                        {
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                                            @user.Username[0].ToString().ToUpper()
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-medium text-gray-900">@user.FullName</div>
+                                            <div class="text-xs text-gray-400">@user.Email</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var role in user.Roles)
+                                        {
+                                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">@role</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    @if (user.IsLocked)
+                                    {
+                                        <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">🔒 Locked</span>
+                                    }
+                                    else if (!user.IsActive)
+                                    {
+                                        <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">Inactive</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">✓ Active</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-xs text-gray-400">@user.CreatedAt.ToString("MMM d, yyyy")</td>
+                                <td class="px-4 py-3 text-right">
+                                    <div class="flex justify-end gap-2">
+                                        @if (user.IsLocked)
+                                        {
+                                            <button @onclick="() => UnlockUser(user.Id)"
+                                                    class="text-xs text-green-600 hover:underline">Unlock</button>
+                                        }
+                                        @if (!user.IsActive)
+                                        {
+                                            <button @onclick="() => ActivateUser(user.Id)"
+                                                    class="text-xs text-blue-600 hover:underline">Activate</button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="() => DeactivateUser(user.Id)"
+                                                    class="text-xs text-orange-600 hover:underline">Deactivate</button>
+                                        }
+                                        @if (!user.Roles.Contains("Admin"))
+                                        {
+                                            <button @onclick="() => PromoteToAdmin(user.Id)"
+                                                    class="text-xs text-purple-600 hover:underline">Make Admin</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private UserPagedResultModel? _users;
+    private bool _loading = true;
+    private int _page = 1;
+    private const int PageSize = 20;
+
+    protected override async Task OnInitializedAsync() => await LoadUsersAsync();
+
+    private async Task LoadUsersAsync()
+    {
+        _loading = true;
+        try { _users = await AdminApi.GetUsersAsync(_page, PageSize); }
+        finally { _loading = false; }
+    }
+
+    private async Task ChangePage(int page) { _page = page; await LoadUsersAsync(); }
+
+    private async Task UnlockUser(Guid id) { await AdminApi.UnlockUserAsync(id); await LoadUsersAsync(); }
+    private async Task ActivateUser(Guid id) { await AdminApi.ActivateUserAsync(id); await LoadUsersAsync(); }
+    private async Task DeactivateUser(Guid id) { await AdminApi.DeactivateUserAsync(id); await LoadUsersAsync(); }
+    private async Task PromoteToAdmin(Guid id)
+    {
+        await AdminApi.AssignRoleAsync(id, "Admin");
+        await LoadUsersAsync();
+    }
+}

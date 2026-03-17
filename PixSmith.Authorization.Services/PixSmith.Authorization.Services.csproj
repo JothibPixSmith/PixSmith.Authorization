@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
+    <ProjectReference Include="..\PixSmith.Authorization.Repositories\PixSmith.Authorization.Repositories.csproj" />
+    <ProjectReference Include="..\src\AuthServer\AuthServer.Domain\PixSmith.Authorization.Domain.csproj" />
+    <ProjectReference Include="..\src\AuthServer\AuthServer.Infrastructure\AuthServer.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

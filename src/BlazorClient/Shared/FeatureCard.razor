@@ -1,0 +1,10 @@
+<div class="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+    <div class="text-3xl mb-2">@Icon</div>
+    <h3 class="font-semibold text-gray-800">@Title</h3>
+    <p class="text-gray-500 text-sm mt-1">@Desc</p>
+</div>
+@code {
+    [Parameter] public string Icon { get; set; } = string.Empty;
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Desc { get; set; } = string.Empty;
+}

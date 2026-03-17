@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Nav
+
+<div class="min-h-screen bg-gray-50 flex flex-col">
+    <!-- Top Navbar -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-6">
+                    <a href="/" class="text-xl font-bold text-blue-600">🔐 AuthServer</a>
+                    <AuthorizeView>
+                        <Authorized>
+                            <a href="/" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Home</a>
+                            <a href="/profile" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Profile</a>
+                            <AuthorizeView Roles="Admin">
+                                <Authorized context="someOtherContext">
+                                    <a href="/admin" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Admin</a>
+                                </Authorized>
+                            </AuthorizeView>
+                        </Authorized>
+                    </AuthorizeView>
+                </div>
+                <div class="flex items-center gap-4">
+                    <AuthorizeView>
+                        <Authorized>
+                            <span class="text-sm text-gray-500">@context.User.Identity?.Name</span>
+                            <a href="authentication/logout"
+                               class="bg-red-100 text-red-700 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-200">
+                                Sign Out
+                            </a>
+                        </Authorized>
+                        <NotAuthorized>
+                            <a href="authentication/login"
+                               class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
+                                Sign In
+                            </a>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        @Body
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 text-center text-sm text-gray-400 py-4">
+        AuthServer &mdash; OAuth 2.0 / OIDC Platform &copy; @DateTime.Now.Year
+    </footer>
+</div>

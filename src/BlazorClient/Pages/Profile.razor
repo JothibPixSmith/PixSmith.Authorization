@@ -1,0 +1,111 @@
+@page "/profile"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@inject IAccountApiService AccountApi
+@inject HttpClient Http
+
+<PageTitle>My Profile</PageTitle>
+
+<div class="max-w-2xl space-y-6">
+    <h1 class="text-2xl font-bold text-gray-800">👤 My Profile</h1>
+
+    @if (_user is null && _loading)
+    {
+        <LoadingSpinner />
+    }
+    else if (_user is not null)
+    {
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+            <!-- Avatar -->
+            <div class="flex items-center gap-4">
+                <div class="h-16 w-16 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
+                    @_user.Username[0].ToString().ToUpper()
+                </div>
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">@_user.FullName</h2>
+                    <p class="text-sm text-gray-400">@_user.Email</p>
+                    <div class="flex gap-1 mt-1">
+                        @foreach (var role in _user.Roles)
+                        {
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">@role</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <hr class="border-gray-100" />
+
+            <!-- Edit Form -->
+            <div class="grid grid-cols-2 gap-4">
+                <InputField Label="First Name" @bind-Value="_firstName" />
+                <InputField Label="Last Name" @bind-Value="_lastName" />
+                <InputField Label="Phone" @bind-Value="_phone" />
+            </div>
+
+            <div class="flex gap-3">
+                <button @onclick="SaveProfileAsync" class="btn-primary" disabled="@_saving">
+                    @(_saving ? "Saving..." : "Save Changes")
+                </button>
+            </div>
+
+            @if (_successMsg is not null)
+            {
+                <p class="text-green-600 text-sm">✅ @_successMsg</p>
+            }
+        </div>
+
+        <!-- Account Info -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-3">
+            <h3 class="font-semibold text-gray-700">Account Information</h3>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+                <InfoRow Label="Username" Value="@_user.Username" />
+                <InfoRow Label="Email Confirmed" Value="@(_user.EmailConfirmed ? "✅ Yes" : "❌ No")" />
+                <InfoRow Label="2FA Enabled" Value="@(_user.TwoFactorEnabled ? "✅ Yes" : "❌ No")" />
+                <InfoRow Label="Member Since" Value="@_user.CreatedAt.ToString("MMMM d, yyyy")" />
+                <InfoRow Label="Last Login" Value="@(_user.LastLoginAt?.ToString("MMM d, yyyy HH:mm") ?? "Never")" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private UserModel? _user;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _successMsg;
+    private string _firstName = string.Empty;
+    private string _lastName = string.Empty;
+    private string _phone = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await AccountApi.GetCurrentUserAsync();
+        if (_user is not null)
+        {
+            _firstName = _user.FirstName ?? string.Empty;
+            _lastName = _user.LastName ?? string.Empty;
+        }
+        _loading = false;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        _saving = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync("api/account/me", new
+            {
+                firstName = _firstName,
+                lastName = _lastName,
+                phoneNumber = _phone
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                _successMsg = "Profile updated successfully.";
+                _user = await AccountApi.GetCurrentUserAsync();
+            }
+        }
+        finally { _saving = false; }
+    }
+}

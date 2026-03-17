@@ -1,0 +1,171 @@
+@page "/admin/clients"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject IAdminApiService AdminApi
+
+<PageTitle>OAuth Client Management</PageTitle>
+
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-800">🔗 OAuth Clients</h1>
+        <div class="flex gap-2">
+            <a href="/admin" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
+            <button @onclick="ShowCreateModal" class="btn-primary text-sm">+ New Client</button>
+        </div>
+    </div>
+
+    @if (_showCreate)
+    {
+        <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+                <h2 class="text-lg font-bold text-gray-800">Create OAuth Client</h2>
+
+                <div class="space-y-3">
+                    <InputField Label="Display Name" @bind-Value="_newClient.DisplayName" />
+                    <InputField Label="Description" @bind-Value="_newClient.Description" />
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">Client Type</label>
+                        <select @bind="_newClient.ClientType" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                            <option value="Confidential">Confidential (server-side)</option>
+                            <option value="Public">Public (SPA / mobile, uses PKCE)</option>
+                        </select>
+                    </div>
+                    <InputField Label="Redirect URI" @bind-Value="_newRedirectUri"
+                                Placeholder="https://yourapp.com/callback" />
+                    <button @onclick="AddRedirectUri" class="text-blue-600 text-sm hover:underline">+ Add URI</button>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach (var uri in _newClient.RedirectUris)
+                        {
+                            <span class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded">
+                                @uri <button @onclick="() => _newClient.RedirectUris.Remove(uri)">×</button>
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @onclick="HideCreateModal" class="btn-secondary">Cancel</button>
+                    <button @onclick="CreateClientAsync" class="btn-primary" disabled="@_creating">
+                        @(_creating ? "Creating..." : "Create Client")
+                    </button>
+                </div>
+
+                @if (_createdClient is not null)
+                {
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4 mt-2">
+                        <p class="text-green-800 font-semibold text-sm">✅ Client created!</p>
+                        <p class="text-xs text-gray-600 mt-1">Client ID: <code>@_createdClient.ClientId</code></p>
+                        <p class="text-xs text-red-700 mt-1 font-medium">
+                            ⚠️ Save this secret now — it won't be shown again:<br/>
+                            <code class="bg-red-50 px-2 py-1 rounded block mt-1 break-all">@_createdClient.ClientSecret</code>
+                        </p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @foreach (var client in _clients)
+            {
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h3 class="font-semibold text-gray-800">@client.DisplayName</h3>
+                            <p class="text-xs text-gray-400 font-mono mt-0.5">@client.ClientId</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full text-xs @(client.IsActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")">
+                                @(client.IsActive ? "Active" : "Inactive")
+                            </span>
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">@client.ClientType</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1 text-xs text-gray-500">
+                        <p>🔑 Token lifetime: @(client.AccessTokenLifetimeSeconds / 60)m</p>
+                        <p>🔄 Offline access: @(client.AllowOfflineAccess ? "Yes" : "No")</p>
+                        <p>🔒 PKCE required: @(client.RequirePkce ? "Yes" : "No")</p>
+                    </div>
+
+                    @if (client.AllowedScopes.Any())
+                    {
+                        <div class="flex flex-wrap gap-1">
+                            @foreach (var scope in client.AllowedScopes)
+                            {
+                                <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">@scope</span>
+                            }
+                        </div>
+                    }
+
+                    <div class="flex gap-2 pt-1">
+                        <button @onclick="() => DeleteClient(client.Id)"
+                                class="text-xs text-red-500 hover:underline">Delete</button>
+                        @if (client.IsActive)
+                        {
+                            <button @onclick="() => DeactivateClient(client.Id)"
+                                    class="text-xs text-orange-500 hover:underline">Deactivate</button>
+                        }
+                        else
+                        {
+                            <button @onclick="() => ActivateClient(client.Id)"
+                                    class="text-xs text-green-600 hover:underline">Activate</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<OAuthClientModel> _clients = [];
+    private bool _loading = true;
+    private bool _showCreate;
+    private bool _creating;
+    private CreateClientFormModel _newClient = new();
+    private string _newRedirectUri = string.Empty;
+    private CreateClientResponseModel? _createdClient;
+
+    protected override async Task OnInitializedAsync() => await LoadClientsAsync();
+
+    private async Task LoadClientsAsync()
+    {
+        _loading = true;
+        try { _clients = (await AdminApi.GetClientsAsync()).ToList(); }
+        finally { _loading = false; }
+    }
+
+    private void ShowCreateModal() { _showCreate = true; _createdClient = null; _newClient = new(); }
+    private void HideCreateModal() => _showCreate = false;
+
+    private void AddRedirectUri()
+    {
+        if (!string.IsNullOrWhiteSpace(_newRedirectUri))
+        {
+            _newClient.RedirectUris.Add(_newRedirectUri.Trim());
+            _newRedirectUri = string.Empty;
+        }
+    }
+
+    private async Task CreateClientAsync()
+    {
+        _creating = true;
+        try
+        {
+            _createdClient = await AdminApi.CreateClientAsync(_newClient);
+            await LoadClientsAsync();
+        }
+        finally { _creating = false; }
+    }
+
+    private async Task DeleteClient(Guid id) { await AdminApi.DeleteClientAsync(id); await LoadClientsAsync(); }
+    private async Task DeactivateClient(Guid id) { await AdminApi.DeactivateClientAsync(id); await LoadClientsAsync(); }
+    private async Task ActivateClient(Guid id) { await AdminApi.ActivateClientAsync(id); await LoadClientsAsync(); }
+}

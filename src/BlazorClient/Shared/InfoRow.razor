@@ -1,0 +1,8 @@
+<div>
+    <span class="text-gray-400">@Label: </span>
+    <span class="text-gray-700 font-medium">@Value</span>
+</div>
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Value { get; set; }
+}

@@ -1,0 +1,83 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Home - AuthServer</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                <h1 class="text-2xl font-bold text-gray-800">
+                    Welcome back, <span class="text-blue-600">@context.User.Identity?.Name</span>!
+                </h1>
+                <p class="text-gray-500 mt-1">You are signed in via OpenID Connect.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <InfoCard Title="Email"
+                          Value="@context.User.FindFirst("email")?.Value"
+                          Icon="✉️" />
+                <InfoCard Title="Roles"
+                          Value="@string.Join(", ", context.User.Claims.Where(c => c.Type == "role").Select(c => c.Value))"
+                          Icon="🏷️" />
+                <InfoCard Title="Subject"
+                          Value="@context.User.FindFirst("sub")?.Value"
+                          Icon="🪪" />
+            </div>
+
+            <AuthorizeView Roles="Admin">
+                <Authorized context="someOtherContext">
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                        <p class="text-amber-800 font-medium">🛡️ You have Admin privileges.</p>
+                        <a href="/admin" class="text-amber-700 underline hover:text-amber-900 text-sm mt-1 inline-block">
+                            Go to Admin Dashboard →
+                        </a>
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </Authorized>
+
+    <NotAuthorized>
+        <!-- Landing / hero for unauthenticated users -->
+        <div class="flex flex-col items-center justify-center py-20 text-center space-y-6">
+            <div class="text-6xl">🔐</div>
+            <h1 class="text-4xl font-extrabold text-gray-800">AuthServer</h1>
+            <p class="text-lg text-gray-500 max-w-lg">
+                A production-ready OAuth 2.0 &amp; OpenID Connect authorization server
+                built with .NET 10, Blazor WASM, and OpenIddict.
+            </p>
+
+            <div class="flex gap-4 flex-wrap justify-center">
+                <a href="authentication/login"
+                   class="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    Sign In with OIDC
+                </a>
+                <a href="api/account/external-login?provider=Google"
+                   class="bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-50 transition flex items-center gap-2">
+                    <span>🔵</span> Sign In with Google
+                </a>
+                <a href="api/account/external-login?provider=Microsoft"
+                   class="bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-50 transition flex items-center gap-2">
+                    <span>🟦</span> Sign In with Microsoft
+                </a>
+            </div>
+
+            <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-left max-w-3xl w-full">
+                <FeatureCard Icon="⚡" Title="OAuth 2.0 + OIDC"
+                             Desc="Full Authorization Code Flow with PKCE, Client Credentials, and Refresh Tokens." />
+                <FeatureCard Icon="🏢" Title="SSO"
+                             Desc="Single Sign-On with Google, Microsoft, and other external providers." />
+                <FeatureCard Icon="🛡️" Title="Admin Dashboard"
+                             Desc="Manage users, roles, and OAuth clients from a built-in admin UI." />
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    // Sub-components inline for brevity
+}
+
+<!-- Reusable info card -->
+@* InfoCard component *@
