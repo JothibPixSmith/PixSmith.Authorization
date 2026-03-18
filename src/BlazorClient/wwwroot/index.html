@@ -8,11 +8,13 @@
     <!-- Tailwind CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="icon" type="image/png" href="favicon.png" />
+    <script src="_content/Microsoft.Authentication.WebAssembly.Msal/AuthenticationService.js"></script>
     <style>
         /* Custom utility classes matching Tailwind naming */
         .btn-primary {
             @apply bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50;
         }
+
         .btn-secondary {
             @apply bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition;
         }
@@ -35,5 +37,6 @@
     </div>
 
     <script src="_framework/blazor.webassembly.js"></script>
+    
 </body>
 </html>
