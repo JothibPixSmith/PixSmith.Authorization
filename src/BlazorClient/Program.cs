@@ -12,32 +12,39 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddOidcAuthentication(options =>
 {
-    // These mirror the OpenIddict client seeded server-side
-    options.ProviderOptions.Authority = builder.Configuration["Auth:Authority"]
-        ?? "https://localhost:7100";
+	options.ProviderOptions.Authority = builder.Configuration["Auth:Authority"]
+		?? "https://localhost:7100";
 
-    options.ProviderOptions.ClientId = builder.Configuration["Auth:ClientId"]
-        ?? "blazor-client";
+	options.ProviderOptions.ClientId = builder.Configuration["Auth:ClientId"]
+		?? "blazor-client";
 
-    options.ProviderOptions.ResponseType = "code"; // Authorization Code + PKCE
-    options.ProviderOptions.DefaultScopes.Add("openid");
-    options.ProviderOptions.DefaultScopes.Add("profile");
-    options.ProviderOptions.DefaultScopes.Add("email");
-    options.ProviderOptions.DefaultScopes.Add("roles");
-    options.ProviderOptions.DefaultScopes.Add("api");
-    options.ProviderOptions.DefaultScopes.Add("offline_access"); // Refresh tokens
+	options.ProviderOptions.RedirectUri = "https://localhost:7200/authentication/login-callback";
+	options.ProviderOptions.PostLogoutRedirectUri = "https://localhost:7200/authentication/logout-callback";
 
-    // Maps OIDC roles claim → .NET role claim
-    options.UserOptions.RoleClaim = "role";
+	options.ProviderOptions.ResponseType = "code"; // Authorization Code + PKCE
+
+	options.ProviderOptions.DefaultScopes.Add("email");
+	options.ProviderOptions.DefaultScopes.Add("roles");
+	options.ProviderOptions.DefaultScopes.Add("api");
+	options.ProviderOptions.DefaultScopes.Add("offline_access");
+
+	options.UserOptions.RoleClaim = "role";
 });
 
 // ─── HTTP Client ──────────────────────────────────────────────────────────────
 
-// Authenticated HTTP client for the API
+// AuthorizationMessageHandler (not BaseAddressAuthorizationMessageHandler) is required
+// because the API runs on a different origin (7100) than the Blazor app (7200).
+var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7100";
+
 builder.Services.AddHttpClient("AuthAPI",
-    client => client.BaseAddress = new Uri(
-        builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7100"))
-    .AddHttpMessageHandler<BaseAddressAuthorizationMessageHandler>();
+	client => client.BaseAddress = new Uri(apiBaseUrl))
+	.AddHttpMessageHandler(sp =>
+		sp.GetRequiredService<AuthorizationMessageHandler>()
+		  .ConfigureHandler(authorizedUrls: [apiBaseUrl], scopes: ["openid", "profile", "api"]));
+
+// Unauthenticated client — used for login/register before tokens exist
+builder.Services.AddHttpClient("Public", client => client.BaseAddress = new Uri(apiBaseUrl));
 
 // Named scoped service to inject the client
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("AuthAPI"));

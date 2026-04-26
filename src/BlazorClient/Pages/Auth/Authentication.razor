@@ -1,8 +1,20 @@
 @page "/authentication/{action}"
 @using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@inject IJSRuntime JSRuntime
 
-<RemoteAuthenticatorView Action="@Action">
-    <LoggingIn>
+@code {
+    private async Task LogMessage(string message)
+    {
+        await JSRuntime.InvokeVoidAsync("console.log", $"{message}");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LogMessage("Page Load");
+    }
+}
+<RemoteAuthenticatorView  Action="@Action">
+    <LoggingIn >
         <div class="flex flex-col items-center justify-center h-64 gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             <p class="text-gray-500">Redirecting to login&hellip;</p>
