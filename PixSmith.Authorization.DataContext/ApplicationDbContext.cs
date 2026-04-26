@@ -69,6 +69,7 @@ public class UserProfile
     public string? LastName { get; set; }
     public string? PhoneNumber { get; set; }
     public string? ProfilePictureUrl { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
 }

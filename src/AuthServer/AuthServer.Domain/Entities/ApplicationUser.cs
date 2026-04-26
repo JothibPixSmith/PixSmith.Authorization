@@ -67,6 +67,43 @@ public sealed class ApplicationUser
         return user;
     }
 
+    // Used by the repository layer to rebuild the aggregate from persisted data.
+    public static ApplicationUser Reconstitute(
+        Guid id, string username, string email, string normalizedEmail, string? passwordHash,
+        string? firstName, string? lastName, string? phoneNumber,
+        bool emailConfirmed, bool twoFactorEnabled, bool isActive, bool isLocked,
+        DateTimeOffset? lockoutEnd, int accessFailedCount,
+        DateTimeOffset createdAt, DateTimeOffset? lastLoginAt, string? profilePictureUrl,
+        IEnumerable<UserRole>? roles = null,
+        IEnumerable<ExternalLoginProvider>? externalLogins = null)
+    {
+        var user = new ApplicationUser
+        {
+            Id = id,
+            Username = username,
+            Email = email,
+            NormalizedEmail = normalizedEmail,
+            PasswordHash = passwordHash,
+            FirstName = firstName,
+            LastName = lastName,
+            PhoneNumber = phoneNumber,
+            EmailConfirmed = emailConfirmed,
+            TwoFactorEnabled = twoFactorEnabled,
+            IsActive = isActive,
+            IsLocked = isLocked,
+            LockoutEnd = lockoutEnd,
+            AccessFailedCount = accessFailedCount,
+            CreatedAt = createdAt,
+            LastLoginAt = lastLoginAt,
+            ProfilePictureUrl = profilePictureUrl,
+        };
+        if (roles is not null)
+            foreach (var r in roles) user._roles.Add(r);
+        if (externalLogins is not null)
+            foreach (var e in externalLogins) user._externalLogins.Add(e);
+        return user;
+    }
+
     // ─── Behaviour ─────────────────────────────────────────────────────────
 
     public void SetPasswordHash(string hash)
