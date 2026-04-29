@@ -44,6 +44,8 @@ public sealed class CreateClientFormModel
 
 public sealed record CreateClientResponseModel(Guid Id, string ClientId, string ClientSecret, string DisplayName);
 
+public sealed record RoleModel(Guid Id, string Name);
+
 // ─── Admin API Service ─────────────────────────────────────────────────────
 
 public interface IAdminApiService
@@ -54,6 +56,9 @@ public interface IAdminApiService
     Task ActivateUserAsync(Guid id);
     Task DeactivateUserAsync(Guid id);
     Task AssignRoleAsync(Guid id, string role);
+    Task<IEnumerable<RoleModel>> GetRolesAsync();
+    Task<RoleModel> CreateRoleAsync(string name);
+    Task DeleteRoleAsync(string name);
     Task<IEnumerable<OAuthClientModel>> GetClientsAsync();
     Task<CreateClientResponseModel> CreateClientAsync(CreateClientFormModel model);
     Task DeleteClientAsync(Guid id);
@@ -82,6 +87,20 @@ public sealed class AdminApiService(HttpClient http) : IAdminApiService
 
     public Task AssignRoleAsync(Guid id, string role) =>
         http.PostAsJsonAsync($"api/admin/users/{id}/roles", new { roleName = role }).AsTask();
+
+    public async Task<IEnumerable<RoleModel>> GetRolesAsync() =>
+        await http.GetFromJsonAsync<List<RoleModel>>("api/admin/roles") ?? [];
+
+    public async Task<RoleModel> CreateRoleAsync(string name)
+    {
+        var response = await http.PostAsJsonAsync("api/admin/roles", new { name });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RoleModel>()
+            ?? throw new InvalidOperationException("Failed to create role.");
+    }
+
+    public Task DeleteRoleAsync(string name) =>
+        http.DeleteAsync($"api/admin/roles/{Uri.EscapeDataString(name)}").AsTask();
 
     public async Task<IEnumerable<OAuthClientModel>> GetClientsAsync() =>
         await http.GetFromJsonAsync<List<OAuthClientModel>>("api/admin/clients")

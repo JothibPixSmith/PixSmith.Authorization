@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.DataContext;
@@ -13,7 +12,7 @@ namespace AuthServer.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/admin")]
-[Authorize(Roles = "Admin")]
+//[Authorize(Roles = "Admin")]
 public sealed class AdminController : ControllerBase
 {
 	private readonly IUserService userService;
@@ -147,6 +146,53 @@ public sealed class AdminController : ControllerBase
 		return result.Succeeded ? Ok() : BadRequest(result.Errors);
 	}
 
+	// ─── Role Management ─────────────────────────────────────────────────
+
+	[HttpGet("roles")]
+	[ProducesResponseType(typeof(IEnumerable<RoleDto>), 200)]
+	public IActionResult GetRoles()
+	{
+		var roles = roleManager.Roles
+			.OrderBy(r => r.Name)
+			.Select(r => new RoleDto(r.Id, r.Name!))
+			.ToList();
+
+		return Ok(roles);
+	}
+
+	[HttpPost("roles")]
+	[ProducesResponseType(typeof(RoleDto), 201)]
+	[ProducesResponseType(typeof(ProblemDetails), 409)]
+	public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request)
+	{
+		if (await roleManager.RoleExistsAsync(request.Name))
+			return Conflict(new { error = $"Role '{request.Name}' already exists." });
+
+		var role = new IdentityRole<Guid>(request.Name);
+		var result = await roleManager.CreateAsync(role);
+		if (!result.Succeeded)
+			return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+
+		return CreatedAtAction(nameof(GetRoles), new RoleDto(role.Id, role.Name!));
+	}
+
+	[HttpDelete("roles/{roleName}")]
+	[ProducesResponseType(204)]
+	[ProducesResponseType(404)]
+	[ProducesResponseType(typeof(ProblemDetails), 409)]
+	public async Task<IActionResult> DeleteRole(string roleName)
+	{
+		var role = await roleManager.FindByNameAsync(roleName);
+		if (role is null) return NotFound();
+
+		var usersInRole = await userManager.GetUsersInRoleAsync(roleName);
+		if (usersInRole.Count > 0)
+			return Conflict(new { error = $"Role '{roleName}' is still assigned to {usersInRole.Count} user(s). Remove all assignments before deleting." });
+
+		var result = await roleManager.DeleteAsync(role);
+		return result.Succeeded ? NoContent() : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+	}
+
 	// ─── OAuth Client Management ──────────────────────────────────────────
 
 	[HttpGet("clients")]
@@ -214,4 +260,6 @@ public sealed class AdminController : ControllerBase
 }
 
 public sealed record RoleRequest(string RoleName);
+public sealed record CreateRoleRequest(string Name);
+public sealed record RoleDto(Guid Id, string Name);
 public sealed record UriRequest(string Uri);

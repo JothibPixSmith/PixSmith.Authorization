@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
@@ -16,6 +17,12 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
 
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var scopeManager = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+
+        // ─── Seed Identity Roles ───────────────────────────────────────────
+
+        await EnsureRoleAsync(roleManager, "Admin", cancellationToken);
+        await EnsureRoleAsync(roleManager, "User", cancellationToken);
 
         // ─── Seed Scopes ───────────────────────────────────────────────────
 
@@ -83,6 +90,15 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static async Task EnsureRoleAsync(
+        RoleManager<IdentityRole<Guid>> roleManager,
+        string name,
+        CancellationToken ct)
+    {
+        if (!await roleManager.RoleExistsAsync(name))
+            await roleManager.CreateAsync(new IdentityRole<Guid>(name));
+    }
 
     private static async Task EnsureScopeAsync(
         IOpenIddictScopeManager manager,
