@@ -51,10 +51,13 @@ public sealed class AccountController(
 	[ProducesResponseType(typeof(ProblemDetails), 401)]
 	public async Task<IActionResult> Login([FromBody] LoginRequest request)
 	{
+		var user = await userService.GetByEmailAsync(request.Email);
+
+
 		var result = await signInManager.PasswordSignInAsync(
-			request.Email, request.Password,
+			user?.Value != null ? user.Value.Username : request.Email, request.Password,
 			isPersistent: request.RememberMe,
-			lockoutOnFailure: true);
+			lockoutOnFailure: false);
 
 		if (result.Succeeded) return Ok(new { message = "Login successful" });
 		if (result.IsLockedOut) return StatusCode(423, new { error = "Account is locked out." });
