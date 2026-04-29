@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager Nav
+@inject BlazorClient.Services.JwtAuthStateProvider AuthProvider
 
 <div class="min-h-screen bg-gray-50 flex flex-col">
     <!-- Top Navbar -->
@@ -25,10 +26,10 @@
                     <AuthorizeView>
                         <Authorized>
                             <span class="text-sm text-gray-500">@context.User.Identity?.Name</span>
-                            <a href="authentication/logout"
-                               class="bg-red-100 text-red-700 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-200">
+                            <button @onclick="SignOut"
+                                    class="bg-red-100 text-red-700 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-red-200">
                                 Sign Out
-                            </a>
+                            </button>
                         </Authorized>
                         <NotAuthorized>
                             <a href="/login"
@@ -51,3 +52,11 @@
         AuthServer &mdash; OAuth 2.0 / OIDC Platform &copy; @DateTime.Now.Year
     </footer>
 </div>
+
+@code {
+    private async Task SignOut()
+    {
+        await AuthProvider.LogOutAsync();
+        Nav.NavigateTo("/login");
+    }
+}

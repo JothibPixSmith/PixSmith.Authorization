@@ -1,45 +1,16 @@
 @page "/authentication/{action}"
-@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
-@inject IJSRuntime JSRuntime
-
-@code {
-    private async Task LogMessage(string message)
-    {
-        await JSRuntime.InvokeVoidAsync("console.log", $"{message}");
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LogMessage("Page Load");
-    }
-}
-<RemoteAuthenticatorView  Action="@Action">
-    <LoggingIn >
-        <div class="flex flex-col items-center justify-center h-64 gap-4">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p class="text-gray-500">Redirecting to login&hellip;</p>
-        </div>
-    </LoggingIn>
-    <CompletingLoggingIn>
-        <div class="flex flex-col items-center justify-center h-64 gap-4">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-            <p class="text-gray-500">Completing sign in&hellip;</p>
-        </div>
-    </CompletingLoggingIn>
-    <LogOut>
-        <div class="flex flex-col items-center justify-center h-64 gap-4">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-            <p class="text-gray-500">Signing you out&hellip;</p>
-        </div>
-    </LogOut>
-    <LogOutSucceeded>
-        <div class="text-center p-8">
-            <p class="text-green-600 font-semibold">You have been signed out successfully.</p>
-            <a href="/" class="mt-4 inline-block text-blue-600 hover:underline">Go home</a>
-        </div>
-    </LogOutSucceeded>
-</RemoteAuthenticatorView>
+@inject BlazorClient.Services.JwtAuthStateProvider AuthProvider
+@inject NavigationManager Nav
 
 @code {
     [Parameter] public string? Action { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Action == "logout" || Action == "logout-callback")
+        {
+            await AuthProvider.LogOutAsync();
+            Nav.NavigateTo("/login");
+        }
+    }
 }

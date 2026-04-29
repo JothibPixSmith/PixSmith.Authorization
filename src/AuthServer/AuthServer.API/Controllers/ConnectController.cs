@@ -111,6 +111,55 @@ public sealed class ConnectController(
 			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 
+		if (request.IsPasswordGrantType())
+		{
+			var user = await userManager.FindByEmailAsync(request.Username!)
+				?? await userManager.FindByNameAsync(request.Username!);
+
+			if (user is null)
+				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "Invalid credentials."
+				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+			// CheckPasswordSignInAsync handles lockout counter increments correctly
+			var signInResult = await signInManager.CheckPasswordSignInAsync(
+				user, request.Password!, lockoutOnFailure: true);
+
+			if (!signInResult.Succeeded)
+			{
+				var description = signInResult.IsLockedOut
+					? "Account is locked out."
+					: "Invalid credentials.";
+
+				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description
+				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+			}
+
+			var identity = new ClaimsIdentity(
+				authenticationType: TokenValidationParameters.DefaultAuthenticationType,
+				nameType: Claims.Name,
+				roleType: Claims.Role);
+
+			identity.SetClaim(Claims.Subject, await userManager.GetUserIdAsync(user))
+					.SetClaim(Claims.Email, await userManager.GetEmailAsync(user))
+					.SetClaim(Claims.Name, await userManager.GetUserNameAsync(user));
+
+			var roles = await userManager.GetRolesAsync(user);
+			foreach (var role in roles)
+				identity.AddClaim(new Claim(Claims.Role, role));
+
+			identity.SetScopes(request.GetScopes());
+			identity.SetResources(await scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync());
+			identity.SetDestinations(GetDestinations);
+
+			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+		}
+
 		if (request.IsClientCredentialsGrantType())
 		{
 			// OpenIddict has already validated the client_id and client_secret before

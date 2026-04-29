@@ -69,6 +69,7 @@ public static class InfrastructureServiceExtensions
 				// Supported flows
 				options.AllowAuthorizationCodeFlow()
 					   .AllowClientCredentialsFlow()
+					   .AllowPasswordFlow()
 					   .AllowRefreshTokenFlow()
 					   .RequireProofKeyForCodeExchange();
 
@@ -119,6 +120,16 @@ public static class InfrastructureServiceExtensions
 					ctx.User.HasClaim(Claims.Private.Scope, "admin"));
 			});
 		});
+
+		// Internal loopback client used by AccountController.Login to call /connect/token.
+		// Trusts the localhost dev certificate so HTTPS works without extra setup.
+		services.AddHttpClient("Self").ConfigurePrimaryHttpMessageHandler(() =>
+			new HttpClientHandler
+			{
+				ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) =>
+					msg.RequestUri?.Host is "localhost" or "127.0.0.1" ||
+					errors == System.Net.Security.SslPolicyErrors.None
+			});
 
 		// ─── Repositories ───────────────────────────────────────
 

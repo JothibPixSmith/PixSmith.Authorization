@@ -1,10 +1,10 @@
 @page "/login"
-@using Microsoft.AspNetCore.Components.WebAssembly.Http
 @using System.ComponentModel.DataAnnotations
+@using System.Text.Json
 @inject NavigationManager Nav
-@inject AuthenticationStateProvider AuthStateProvider
-@inject IConfiguration Config
+@inject JwtAuthStateProvider AuthProvider
 @inject IHttpClientFactory HttpClientFactory
+@inject IConfiguration Config
 
 <PageTitle>Sign In - AuthServer</PageTitle>
 
@@ -88,8 +88,9 @@
     {
         _apiBaseUrl = Config["ApiBaseUrl"] ?? "https://localhost:7100";
 
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        if (authState.User.Identity?.IsAuthenticated == true)
+        // Already signed in — go straight to admin
+        var token = await AuthProvider.GetAccessTokenAsync();
+        if (token is not null)
             Nav.NavigateTo("/admin");
     }
 
@@ -99,36 +100,35 @@
         _loading = true;
         try
         {
-            // Use an unauthenticated client with credentials:include so the browser
-            // stores the Identity cookie returned by the auth server (port 7100).
             var http = HttpClientFactory.CreateClient("Public");
-            var request = new HttpRequestMessage(HttpMethod.Post, "api/account/login");
-            request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
-            request.Content = JsonContent.Create(new { _form.Email, _form.Password });
+            var response = await http.PostAsJsonAsync("api/account/login",
+                new { _form.Email, _form.Password });
 
-            var response = await http.SendAsync(request);
-
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                // Cookie is now set on localhost:7100. Trigger the OIDC Authorization
-                // Code + PKCE flow — /connect/authorize will see the cookie and skip
-                // the server-side login page, issuing tokens transparently.
-                Nav.NavigateToLogin("authentication/login", new InteractiveRequestOptions
-                {
-                    Interaction = InteractionType.SignIn,
-                    ReturnUrl = "/admin"
-                });
-            }
-            else
-            {
-                var body = await response.Content.ReadFromJsonAsync<ApiError>();
-                _error = body?.Error ?? response.StatusCode switch
+                var problem = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+                _error = response.StatusCode switch
                 {
                     System.Net.HttpStatusCode.Unauthorized => "Invalid email or password.",
                     (System.Net.HttpStatusCode)423 => "Account is locked out.",
-                    _ => "Sign in failed. Please try again."
+                    (System.Net.HttpStatusCode)428 => "Two-factor authentication required.",
+                    _ => problem?.Error ?? "Sign in failed. Please try again."
                 };
+                return;
             }
+
+            // The login endpoint now returns the full token response from /connect/token
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var accessToken = doc.RootElement.GetProperty("access_token").GetString();
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                _error = "No token returned. Please try again.";
+                return;
+            }
+
+            await AuthProvider.MarkAuthenticatedAsync(accessToken);
+            Nav.NavigateTo("/admin");
         }
         catch
         {
@@ -155,5 +155,5 @@
         public string Password { get; set; } = string.Empty;
     }
 
-    private sealed record ApiError(string? Error);
+    private sealed record ErrorResponse(string? Error);
 }
