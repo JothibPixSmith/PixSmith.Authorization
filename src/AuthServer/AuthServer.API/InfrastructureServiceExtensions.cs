@@ -1,6 +1,7 @@
 using AuthServer.Infrastructure.OpenIddict;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Validation.AspNetCore;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Repositories;
 using PixSmith.Authorization.Repositories.Interfaces;
@@ -92,6 +93,32 @@ public static class InfrastructureServiceExtensions
 				options.UseLocalServer();
 				options.UseAspNetCore();
 			});
+
+		// ─── Authorization Policies ─────────────────────────────
+		// Use these on API endpoints that should accept bearer tokens
+		// (both from user OIDC flows and M2M client credentials).
+
+		services.AddAuthorization(options =>
+		{
+			// Requires a valid bearer token with the "api" scope.
+			options.AddPolicy("ApiAccess", policy =>
+			{
+				policy.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+				policy.RequireAuthenticatedUser();
+				policy.RequireClaim(Claims.Private.Scope, Scopes.OfflineAccess, "api");
+			});
+
+			// Requires a valid bearer token and the "Admin" role (for user-issued tokens)
+			// or the "admin" scope (for M2M tokens).
+			options.AddPolicy("AdminAccess", policy =>
+			{
+				policy.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+				policy.RequireAuthenticatedUser();
+				policy.RequireAssertion(ctx =>
+					ctx.User.IsInRole("Admin") ||
+					ctx.User.HasClaim(Claims.Private.Scope, "admin"));
+			});
+		});
 
 		// ─── Repositories ───────────────────────────────────────
 

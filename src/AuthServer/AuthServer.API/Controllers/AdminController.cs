@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.DataContext;
@@ -12,7 +13,7 @@ namespace AuthServer.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/admin")]
-//[Authorize(Roles = "Admin")]
+[Authorize(Policy = "AdminAccess")]
 public sealed class AdminController : ControllerBase
 {
 	private readonly IUserService userService;

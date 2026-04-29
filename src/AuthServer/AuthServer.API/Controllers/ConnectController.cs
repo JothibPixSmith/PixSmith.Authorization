@@ -113,8 +113,19 @@ public sealed class ConnectController(
 
 		if (request.IsClientCredentialsGrantType())
 		{
-			var identity = new ClaimsIdentity(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-			identity.SetClaim(Claims.Subject, request.ClientId);
+			// OpenIddict has already validated the client_id and client_secret before
+			// reaching here, so we can safely resolve the application.
+			var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
+				?? throw new InvalidOperationException("The client application was not found.");
+
+			var identity = new ClaimsIdentity(
+				authenticationType: TokenValidationParameters.DefaultAuthenticationType,
+				nameType: Claims.Name,
+				roleType: Claims.Role);
+
+			identity.SetClaim(Claims.Subject, await applicationManager.GetClientIdAsync(application));
+			identity.SetClaim(Claims.Name, await applicationManager.GetDisplayNameAsync(application));
+
 			identity.SetScopes(request.GetScopes());
 			identity.SetResources(await scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync());
 			identity.SetDestinations(GetDestinations);
