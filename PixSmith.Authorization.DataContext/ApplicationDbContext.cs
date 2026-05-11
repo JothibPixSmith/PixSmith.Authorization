@@ -42,7 +42,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             e.HasKey(x => x.Id);
             e.Property(x => x.ClientId).HasMaxLength(100).IsRequired();
+            e.Property(x => x.ClientSecret).HasMaxLength(500).IsRequired();
             e.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.ClientType).HasMaxLength(50).IsRequired();
             e.HasIndex(x => x.ClientId).IsUnique();
         });
 
@@ -78,17 +80,22 @@ public class OAuthClientRegistration
 {
     public Guid Id { get; set; }
     public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? LogoUri { get; set; }
     public string ClientType { get; set; } = "Confidential";
     public bool IsActive { get; set; } = true;
-    public string RedirectUrisJson { get; set; } = "[]";
-    public string AllowedScopesJson { get; set; } = "[]";
-    public string AllowedGrantTypesJson { get; set; } = "[]";
     public bool RequireConsent { get; set; }
+    public bool RequirePkce { get; set; }
     public bool AllowOfflineAccess { get; set; } = true;
     public int AccessTokenLifetimeSeconds { get; set; } = 3600;
     public int IdentityTokenLifetimeSeconds { get; set; } = 300;
+    public int? AbsoluteRefreshTokenLifetimeSeconds { get; set; }
+    public string RedirectUrisJson { get; set; } = "[]";
+    public string AllowedScopesJson { get; set; } = "[]";
+    public string AllowedGrantTypesJson { get; set; } = "[]";
+    public string CorsOriginsJson { get; set; } = "[]";
     public Guid CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

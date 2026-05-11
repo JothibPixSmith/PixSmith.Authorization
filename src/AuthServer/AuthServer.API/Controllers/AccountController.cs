@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using System.Security.Claims;
-using System.Net.Http;
 
 namespace AuthServer.API.Controllers;
 
@@ -43,60 +42,6 @@ public sealed class AccountController(
 
 		await userManager.AddToRoleAsync(identityUser, "User");
 		return Ok(result.Value);
-	}
-
-	// ─── Login ────────────────────────────────────────────────────────────
-
-	[HttpPost("login")]
-	[ProducesResponseType(200)]
-	[ProducesResponseType(typeof(ProblemDetails), 401)]
-	public async Task<IActionResult> Login(
-		[FromBody] LoginRequest request,
-		[FromServices] IHttpClientFactory httpClientFactory)
-	{
-		// Validate credentials and handle lockout / 2FA before touching the token endpoint.
-		var identityUser = await userManager.FindByEmailAsync(request.Email);
-		if (identityUser is null)
-			return Unauthorized(new { error = "Invalid email or password." });
-
-		var signInResult = await signInManager.PasswordSignInAsync(
-			identityUser.UserName!, request.Password,
-			isPersistent: request.RememberMe,
-			lockoutOnFailure: true);
-
-		if (signInResult.IsLockedOut)
-			return StatusCode(423, new { error = "Account is locked out." });
-		if (signInResult.RequiresTwoFactor)
-			return StatusCode(428, new { error = "2FA required.", redirectTo = "/2fa" });
-		if (!signInResult.Succeeded)
-			return Unauthorized(new { error = "Invalid email or password." });
-
-		// Credentials are valid — exchange them for a JWT via the local ROPC token endpoint.
-		var http = httpClientFactory.CreateClient("Self");
-		var tokenUrl = $"{Request.Scheme}://{Request.Host}/connect/token";
-
-		var tokenResponse = await http.PostAsync(tokenUrl, new FormUrlEncodedContent(
-			new Dictionary<string, string>
-			{
-				["grant_type"] = "password",
-				["username"] = request.Email,
-				["password"] = request.Password,
-				["scope"] = "openid profile email roles api offline_access",
-				["client_id"] = "blazor-client",
-			}));
-
-		var json = await tokenResponse.Content.ReadAsStringAsync();
-		return Content(json, "application/json");
-	}
-
-	// ─── Logout ───────────────────────────────────────────────────────────
-
-	[HttpPost("logout")]
-	[Authorize]
-	public async Task<IActionResult> Logout()
-	{
-		await signInManager.SignOutAsync();
-		return Ok();
 	}
 
 	// ─── External SSO Login ───────────────────────────────────────────────

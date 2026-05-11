@@ -36,6 +36,52 @@ public sealed class OAuthClient
     public IReadOnlyList<string> AllowedGrantTypes => _allowedGrantTypes.AsReadOnly();
     public IReadOnlyList<string> CorsOrigins => _corsOrigins.AsReadOnly();
 
+    public static OAuthClient Reconstitute(
+        Guid id,
+        string clientId,
+        string clientSecret,
+        string displayName,
+        string? description,
+        string? logoUri,
+        ClientType clientType,
+        bool isActive,
+        bool requireConsent,
+        bool requirePkce,
+        bool allowOfflineAccess,
+        int accessTokenLifetimeSeconds,
+        int identityTokenLifetimeSeconds,
+        int? absoluteRefreshTokenLifetimeSeconds,
+        DateTimeOffset createdAt,
+        Guid createdByUserId,
+        IEnumerable<string> redirectUris,
+        IEnumerable<string> allowedScopes,
+        IEnumerable<string> allowedGrantTypes,
+        IEnumerable<string> corsOrigins)
+    {
+        var client = new OAuthClient();
+        client.Id = id;
+        client.ClientId = clientId;
+        client.ClientSecret = clientSecret;
+        client.DisplayName = displayName;
+        client.Description = description;
+        client.LogoUri = logoUri;
+        client.ClientType = clientType;
+        client.IsActive = isActive;
+        client.RequireConsent = requireConsent;
+        client.RequirePkce = requirePkce;
+        client.AllowOfflineAccess = allowOfflineAccess;
+        client.AccessTokenLifetimeSeconds = accessTokenLifetimeSeconds;
+        client.IdentityTokenLifetimeSeconds = identityTokenLifetimeSeconds;
+        client.AbsoluteRefreshTokenLifetimeSeconds = absoluteRefreshTokenLifetimeSeconds;
+        client.CreatedAt = createdAt;
+        client.CreatedByUserId = createdByUserId;
+        client._redirectUris.AddRange(redirectUris);
+        client._allowedScopes.AddRange(allowedScopes);
+        client._allowedGrantTypes.AddRange(allowedGrantTypes);
+        client._corsOrigins.AddRange(corsOrigins);
+        return client;
+    }
+
     public static OAuthClient Create(
         string clientId,
         string clientSecret,
