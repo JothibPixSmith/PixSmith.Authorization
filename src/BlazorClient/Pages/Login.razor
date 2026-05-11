@@ -130,7 +130,7 @@
             await AuthProvider.MarkAuthenticatedAsync(accessToken);
             Nav.NavigateTo("/admin");
         }
-        catch
+        catch(Exception ex)
         {
             _error = "Unable to reach the server. Please try again.";
         }

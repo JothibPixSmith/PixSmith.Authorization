@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.4.11605.240 stable
+VisualStudioVersion = 18.4.11605.240
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.Domain", "src\AuthServer\AuthServer.Domain\PixSmith.Authorization.Domain.csproj", "{11111111-1111-1111-1111-111111111111}"
 EndProject
@@ -19,6 +19,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixSmith.Authorization.DataContext", "PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj", "{730E6B73-9248-47E2-BB5B-3953243F8A81}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixSmith.Authorization.Repositories", "PixSmith.Authorization.Repositories\PixSmith.Authorization.Repositories.csproj", "{DA345AA7-7D72-453D-9687-C524719E0B06}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AuthClient", "AuthClient", "{6205AA0B-36CD-4AD2-A696-B7F6AFAA0AE2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -62,7 +64,7 @@ Global
 		{11111111-1111-1111-1111-111111111111} = {77777777-7777-7777-7777-777777777777}
 		{33333333-3333-3333-3333-333333333333} = {77777777-7777-7777-7777-777777777777}
 		{44444444-4444-4444-4444-444444444444} = {77777777-7777-7777-7777-777777777777}
-		{55555555-5555-5555-5555-555555555555} = {66666666-6666-6666-6666-666666666666}
+		{55555555-5555-5555-5555-555555555555} = {6205AA0B-36CD-4AD2-A696-B7F6AFAA0AE2}
 		{77777777-7777-7777-7777-777777777777} = {66666666-6666-6666-6666-666666666666}
 		{2A7FC23E-E0FC-48DB-9197-4B5B893D0B06} = {77777777-7777-7777-7777-777777777777}
 		{730E6B73-9248-47E2-BB5B-3953243F8A81} = {77777777-7777-7777-7777-777777777777}

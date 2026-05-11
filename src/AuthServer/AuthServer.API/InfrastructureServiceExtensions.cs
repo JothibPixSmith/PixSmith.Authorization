@@ -60,11 +60,11 @@ public static class InfrastructureServiceExtensions
 				// Well-known endpoints
 				options.SetAuthorizationEndpointUris("/connect/authorize")
 					   .SetTokenEndpointUris("/connect/token")
-					   .SetUserinfoEndpointUris("/connect/userinfo")
-					   .SetLogoutEndpointUris("/connect/logout")
+					   .SetUserInfoEndpointUris("/connect/userinfo")
+					   .SetEndSessionEndpointUris("/connect/logout")
 					   .SetIntrospectionEndpointUris("/connect/introspect")
 					   .SetRevocationEndpointUris("/connect/revoke")
-					   .SetCryptographyEndpointUris("/.well-known/jwks");
+					   .SetJsonWebKeySetEndpointUris("/.well-known/jwks");
 
 				// Supported flows
 				options.AllowAuthorizationCodeFlow()
@@ -80,13 +80,14 @@ public static class InfrastructureServiceExtensions
 
 				// Dev encryption/signing (replace with proper certs in production)
 				options.AddDevelopmentEncryptionCertificate()
-					   .AddDevelopmentSigningCertificate();
+					   .AddDevelopmentSigningCertificate()
+					   .DisableAccessTokenEncryption(); // allows client-side JWT parsing; re-enable with proper key distribution in production
 
 				options.UseAspNetCore()
 					.EnableAuthorizationEndpointPassthrough()
 					.EnableTokenEndpointPassthrough()
-					.EnableUserinfoEndpointPassthrough()
-					.EnableLogoutEndpointPassthrough()
+					.EnableUserInfoEndpointPassthrough()
+					.EnableEndSessionEndpointPassthrough()
 					.EnableStatusCodePagesIntegration();
 			})
 			.AddValidation(options =>

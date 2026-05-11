@@ -1,5 +1,6 @@
 using AuthServer.API;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using PixSmith.Authorization.DataContext;
 using Serilog;
 
@@ -58,20 +59,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
 	c.SwaggerDoc("v1", new() { Title = "AuthServer API", Version = "v1" });
-	c.AddSecurityDefinition("Bearer", new()
+	c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme()
 	{
-		Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+		Type = SecuritySchemeType.Http,
 		Scheme = "bearer",
 		BearerFormat = "JWT",
 		Description = "Enter your bearer token"
 	});
-	c.AddSecurityRequirement(new()
+	c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
 	{
-		{
-			new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } },
-			[]
-		}
-	});
+		[new OpenApiSecuritySchemeReference("Bearer", document)] = new List<string>()
+	}); ;
 });
 
 // ─── App Pipeline ─────────────────────────────────────────────────────────────

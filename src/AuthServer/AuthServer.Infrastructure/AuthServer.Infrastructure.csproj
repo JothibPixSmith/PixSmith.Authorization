@@ -21,8 +21,8 @@
     </PackageReference>
 
     <!-- OpenIddict - OAuth 2.0 / OIDC server -->
-    <PackageReference Include="OpenIddict.AspNetCore" Version="5.*" />
-    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="5.*" />
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
 
     <!-- ASP.NET Identity -->
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.*" />
