@@ -1,9 +1,7 @@
 @page "/login"
 @using System.ComponentModel.DataAnnotations
-@using System.Text.Json
 @inject NavigationManager Nav
-@inject JwtAuthStateProvider AuthProvider
-@inject IHttpClientFactory HttpClientFactory
+@inject BffAuthStateProvider AuthProvider
 @inject IConfiguration Config
 
 <PageTitle>Sign In - AuthServer</PageTitle>
@@ -82,15 +80,14 @@
     private readonly LoginForm _form = new();
     private string? _error;
     private bool _loading;
-    private string _apiBaseUrl = string.Empty;
+    private string _bffBaseUrl = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        _apiBaseUrl = Config["ApiBaseUrl"] ?? "https://localhost:7100";
+        _bffBaseUrl = Config["BffBaseUrl"] ?? "https://localhost:7300";
 
-        // Already signed in — go straight to admin
-        var token = await AuthProvider.GetAccessTokenAsync();
-        if (token is not null)
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
             Nav.NavigateTo("/admin");
     }
 
@@ -100,37 +97,11 @@
         _loading = true;
         try
         {
-            var http = HttpClientFactory.CreateClient("Public");
-            var response = await http.PostAsJsonAsync("api/account/login",
-                new { _form.Email, _form.Password });
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var problem = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                _error = response.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.Unauthorized => "Invalid email or password.",
-                    (System.Net.HttpStatusCode)423 => "Account is locked out.",
-                    (System.Net.HttpStatusCode)428 => "Two-factor authentication required.",
-                    _ => problem?.Error ?? "Sign in failed. Please try again."
-                };
-                return;
-            }
-
-            // The login endpoint now returns the full token response from /connect/token
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var accessToken = doc.RootElement.GetProperty("access_token").GetString();
-
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                _error = "No token returned. Please try again.";
-                return;
-            }
-
-            await AuthProvider.MarkAuthenticatedAsync(accessToken);
-            Nav.NavigateTo("/admin");
+            _error = await AuthProvider.LoginAsync(_form.Email, _form.Password);
+            if (_error is null)
+                Nav.NavigateTo("/admin");
         }
-        catch(Exception ex)
+        catch
         {
             _error = "Unable to reach the server. Please try again.";
         }
@@ -141,10 +112,10 @@
     }
 
     private void SignInWithGoogle() =>
-        Nav.NavigateTo($"{_apiBaseUrl}/api/account/external-login?provider=Google", forceLoad: true);
+        Nav.NavigateTo($"{_bffBaseUrl}/bff/external-login?provider=Google", forceLoad: true);
 
     private void SignInWithMicrosoft() =>
-        Nav.NavigateTo($"{_apiBaseUrl}/api/account/external-login?provider=Microsoft", forceLoad: true);
+        Nav.NavigateTo($"{_bffBaseUrl}/bff/external-login?provider=Microsoft", forceLoad: true);
 
     private sealed class LoginForm
     {
@@ -154,6 +125,4 @@
         [Required(ErrorMessage = "Password is required.")]
         public string Password { get; set; } = string.Empty;
     }
-
-    private sealed record ErrorResponse(string? Error);
 }

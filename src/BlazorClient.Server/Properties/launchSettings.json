@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "BlazorClient.Server": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:7300;http://localhost:7301"
+    }
+  }
+}

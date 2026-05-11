@@ -80,8 +80,7 @@ public static class InfrastructureServiceExtensions
 
 				// Dev encryption/signing (replace with proper certs in production)
 				options.AddDevelopmentEncryptionCertificate()
-					   .AddDevelopmentSigningCertificate()
-					   .DisableAccessTokenEncryption(); // allows client-side JWT parsing; re-enable with proper key distribution in production
+					   .AddDevelopmentSigningCertificate();
 
 				options.UseAspNetCore()
 					.EnableAuthorizationEndpointPassthrough()

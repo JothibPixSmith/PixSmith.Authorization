@@ -191,7 +191,13 @@ public sealed class ConnectController(
 	[HttpGet("~/connect/userinfo")]
 	public async Task<IActionResult> UserInfo()
 	{
-		var user = await userManager.GetUserAsync(User);
+		// GetUserAsync looks for ClaimTypes.NameIdentifier, but OpenIddict's server scheme
+		// stores the user ID in "sub" — use GetClaim(Claims.Subject) to read it correctly.
+		var userId = User.GetClaim(Claims.Subject);
+		if (userId is null)
+			return Challenge(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+		var user = await userManager.FindByIdAsync(userId);
 		if (user is null)
 			return Challenge(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 

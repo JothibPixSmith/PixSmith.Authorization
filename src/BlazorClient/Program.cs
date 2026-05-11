@@ -11,24 +11,27 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // ─── Authentication ───────────────────────────────────────────────────────────
 
 builder.Services.AddAuthorizationCore();
-builder.Services.AddScoped<JwtAuthStateProvider>();
+builder.Services.AddScoped<BffAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(
-    sp => sp.GetRequiredService<JwtAuthStateProvider>());
-builder.Services.AddScoped<JwtTokenHandler>();
+    sp => sp.GetRequiredService<BffAuthStateProvider>());
+builder.Services.AddScoped<IncludeCredentialsHandler>();
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7100";
+var bffBaseUrl = builder.Configuration["BffBaseUrl"] ?? "https://localhost:7300";
 
-// Authenticated client — attaches the stored JWT to every request
+// BFF-specific endpoints: /bff/login, /bff/logout, /bff/user
+builder.Services.AddHttpClient("BffClient",
+    client => client.BaseAddress = new Uri(bffBaseUrl))
+    .AddHttpMessageHandler<IncludeCredentialsHandler>();
+
+// All AuthServer API calls routed through the BFF proxy.
+// Trailing slash is required so relative paths (e.g. "api/admin/...") resolve correctly.
 builder.Services.AddHttpClient("AuthAPI",
-    client => client.BaseAddress = new Uri(apiBaseUrl))
-    .AddHttpMessageHandler<JwtTokenHandler>();
+    client => client.BaseAddress = new Uri($"{bffBaseUrl.TrimEnd('/')}/bff/proxy/"))
+    .AddHttpMessageHandler<IncludeCredentialsHandler>();
 
-// Unauthenticated client — used for login before a token exists
-builder.Services.AddHttpClient("Public", client => client.BaseAddress = new Uri(apiBaseUrl));
-
-// Default injected HttpClient uses the authenticated named client
+// Default injected HttpClient uses the proxied API client
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("AuthAPI"));
 
 // ─── App Services ─────────────────────────────────────────────────────────────

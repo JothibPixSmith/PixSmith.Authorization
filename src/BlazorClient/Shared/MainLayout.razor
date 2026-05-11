@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager Nav
-@inject BlazorClient.Services.JwtAuthStateProvider AuthProvider
+@inject BlazorClient.Services.BffAuthStateProvider AuthProvider
 
 <div class="min-h-screen bg-gray-50 flex flex-col">
     <!-- Top Navbar -->
@@ -56,7 +56,7 @@
 @code {
     private async Task SignOut()
     {
-        await AuthProvider.LogOutAsync();
+        await AuthProvider.LogoutAsync();
         Nav.NavigateTo("/login");
     }
 }
