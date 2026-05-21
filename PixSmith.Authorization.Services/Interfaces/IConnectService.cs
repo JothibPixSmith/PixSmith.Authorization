@@ -1,6 +1,5 @@
 using AuthServer.Domain.Results;
 using Microsoft.AspNetCore.Identity;
-using OpenIddict.Abstractions;
 using System.Security.Claims;
 
 namespace PixSmith.Authorization.Services.Interfaces;
@@ -24,12 +23,11 @@ public interface IConnectService
 
     /// <summary>
     /// Builds a fully populated ClaimsIdentity with scopes, resources, and per-claim
-    /// destinations for the authorization and password grant flows.
+    /// destinations for the authorization-code and password grant flows.
     /// </summary>
     Task<ClaimsIdentity> BuildIdentityAsync(
         IdentityUser<Guid> user,
         IEnumerable<string> requestedScopes,
-        IOpenIddictScopeManager scopeManager,
         CancellationToken ct = default);
 
     /// <summary>
@@ -41,6 +39,17 @@ public interface IConnectService
         ClaimsPrincipal existingPrincipal,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Builds a ClaimsIdentity for a confidential client using the client-credentials grant.
+    /// </summary>
+    Task<ClaimsIdentity> BuildClientCredentialsIdentityAsync(
+        string clientId,
+        IEnumerable<string> requestedScopes,
+        CancellationToken ct = default);
+
     /// <summary>Returns the userinfo payload for the /connect/userinfo endpoint.</summary>
     Task<Dictionary<string, object>?> GetUserInfoAsync(string subject, CancellationToken ct = default);
+
+    /// <summary>Signs the current user out of the Identity cookie session.</summary>
+    Task SignOutAsync(CancellationToken ct = default);
 }

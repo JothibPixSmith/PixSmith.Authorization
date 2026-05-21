@@ -10,7 +10,9 @@ namespace PixSmith.Authorization.Services;
 
 public sealed class ConnectService(
     UserManager<IdentityUser<Guid>> userManager,
-    SignInManager<IdentityUser<Guid>> signInManager) : IConnectService
+    SignInManager<IdentityUser<Guid>> signInManager,
+    IOpenIddictApplicationManager applicationManager,
+    IOpenIddictScopeManager scopeManager) : IConnectService
 {
     // ── User resolution ───────────────────────────────────────────────────────
 
@@ -47,7 +49,6 @@ public sealed class ConnectService(
     public async Task<ClaimsIdentity> BuildIdentityAsync(
         IdentityUser<Guid> user,
         IEnumerable<string> requestedScopes,
-        IOpenIddictScopeManager scopeManager,
         CancellationToken ct = default)
     {
         var identity = new ClaimsIdentity(
@@ -75,22 +76,43 @@ public sealed class ConnectService(
         ClaimsPrincipal existingPrincipal,
         CancellationToken ct = default)
     {
-        // Carry forward scopes and other OpenIddict internal claims from the existing token
         var identity = new ClaimsIdentity(
             existingPrincipal.Claims,
             TokenValidationParameters.DefaultAuthenticationType,
             Claims.Name, Claims.Role);
 
-        // Refresh mutable user data
         identity.SetClaim(Claims.Subject, await userManager.GetUserIdAsync(user))
                 .SetClaim(Claims.Email,   await userManager.GetEmailAsync(user))
                 .SetClaim(Claims.Name,    await userManager.GetUserNameAsync(user));
 
-        // Replace role claims with the current database state
         identity.RemoveClaims(Claims.Role);
         foreach (var role in await userManager.GetRolesAsync(user))
             identity.AddClaim(new Claim(Claims.Role, role));
 
+        identity.SetDestinations(GetDestinations);
+
+        return identity;
+    }
+
+    public async Task<ClaimsIdentity> BuildClientCredentialsIdentityAsync(
+        string clientId,
+        IEnumerable<string> requestedScopes,
+        CancellationToken ct = default)
+    {
+        var application = await applicationManager.FindByClientIdAsync(clientId, ct)
+            ?? throw new InvalidOperationException($"Client application '{clientId}' not found.");
+
+        var identity = new ClaimsIdentity(
+            authenticationType: TokenValidationParameters.DefaultAuthenticationType,
+            nameType:           Claims.Name,
+            roleType:           Claims.Role);
+
+        identity.SetClaim(Claims.Subject, await applicationManager.GetClientIdAsync(application, ct));
+        identity.SetClaim(Claims.Name,    await applicationManager.GetDisplayNameAsync(application, ct));
+
+        identity.SetScopes(requestedScopes);
+        identity.SetResources(
+            await scopeManager.ListResourcesAsync(identity.GetScopes(), ct).ToListAsync());
         identity.SetDestinations(GetDestinations);
 
         return identity;
@@ -115,6 +137,11 @@ public sealed class ConnectService(
             [Claims.Role]          = roles,
         };
     }
+
+    // ── Session ───────────────────────────────────────────────────────────────
+
+    public Task SignOutAsync(CancellationToken ct = default) =>
+        signInManager.SignOutAsync();
 
     // ── Destinations ──────────────────────────────────────────────────────────
 

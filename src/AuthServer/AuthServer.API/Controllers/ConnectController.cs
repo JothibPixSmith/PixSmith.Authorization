@@ -12,11 +12,7 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace AuthServer.API.Controllers;
 
 [ApiExplorerSettings(IgnoreApi = true)]
-public sealed class ConnectController(
-    IConnectService connectService,
-    IOpenIddictApplicationManager applicationManager,
-    IOpenIddictScopeManager scopeManager,
-    SignInManager<IdentityUser<Guid>> signInManager) : Controller
+public sealed class ConnectController(IConnectService connectService) : Controller
 {
     // ─── Authorization Endpoint ───────────────────────────────────────────────
 
@@ -45,7 +41,7 @@ public sealed class ConnectController(
         var user = await connectService.FindUserByIdentityPrincipalAsync(result.Principal!);
         if (user is null) throw new InvalidOperationException("User not found.");
 
-        var identity = await connectService.BuildIdentityAsync(user, request.GetScopes(), scopeManager);
+        var identity = await connectService.BuildIdentityAsync(user, request.GetScopes());
         return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
@@ -88,31 +84,14 @@ public sealed class ConnectController(
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = validation.Error
                 }), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
-            var identity = await connectService.BuildIdentityAsync(user, request.GetScopes(), scopeManager);
+            var identity = await connectService.BuildIdentityAsync(user, request.GetScopes());
             return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
         if (request.IsClientCredentialsGrantType())
         {
-            var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
-                ?? throw new InvalidOperationException("Client application not found.");
-
-            var identity = new System.Security.Claims.ClaimsIdentity(
-                authenticationType: Microsoft.IdentityModel.Tokens.TokenValidationParameters.DefaultAuthenticationType,
-                nameType: Claims.Name,
-                roleType: Claims.Role);
-
-            identity.SetClaim(Claims.Subject, await applicationManager.GetClientIdAsync(application));
-            identity.SetClaim(Claims.Name,    await applicationManager.GetDisplayNameAsync(application));
-
-            identity.SetScopes(request.GetScopes());
-            identity.SetResources(await scopeManager.ListResourcesAsync(identity.GetScopes()).ToListAsync());
-            identity.SetDestinations(c => c.Type switch
-            {
-                Claims.Name or Claims.Subject => [Destinations.AccessToken, Destinations.IdentityToken],
-                _                             => [Destinations.AccessToken]
-            });
-
+            var identity = await connectService.BuildClientCredentialsIdentityAsync(
+                request.ClientId!, request.GetScopes());
             return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -140,7 +119,7 @@ public sealed class ConnectController(
     [HttpGet("~/connect/logout")]
     public async Task<IActionResult> Logout()
     {
-        await signInManager.SignOutAsync();
+        await connectService.SignOutAsync();
         return SignOut(
             authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
             properties: new AuthenticationProperties { RedirectUri = "/" });
