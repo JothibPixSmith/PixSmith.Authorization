@@ -102,6 +102,13 @@ public sealed record UpdateOAuthClientRequest(
 	int AccessTokenLifetimeSeconds,
 	int IdentityTokenLifetimeSeconds);
 
+// ─── Roles ─────────────────────────────────────────────────────────────────
+
+public sealed record RoleDto(Guid Id, string Name);
+public sealed record RoleRequest(string RoleName);
+public sealed record CreateRoleRequest(string Name);
+public sealed record UriRequest(string Uri);
+
 // ─── Admin Dashboard ───────────────────────────────────────────────────────
 
 public sealed record DashboardStatsDto(

@@ -140,11 +140,12 @@ public static class InfrastructureServiceExtensions
 		// ─── Services ───────────────────────────────────────
 
 		services.AddTransient<IPasswordHashingService, PasswordHashingService>();
-
-		services.AddTransient<IUserService, UserService>();
-
 		services.AddTransient<IEmailService, EmailService>();
 
+		services.AddTransient<IUserService, UserService>();
+		services.AddTransient<IAccountService, AccountService>();
+		services.AddTransient<IAdminService, AdminService>();
+		services.AddTransient<IConnectService, ConnectService>();
 		services.AddTransient<IOAuthClientService, OAuthClientService>();
 
 		services.AddHostedService<OpenIddictSeeder>();
