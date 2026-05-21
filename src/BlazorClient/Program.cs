@@ -11,28 +11,23 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // ─── Authentication ───────────────────────────────────────────────────────────
 
 builder.Services.AddAuthorizationCore();
-builder.Services.AddScoped<BffAuthStateProvider>();
+builder.Services.AddScoped<JwtAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(
-    sp => sp.GetRequiredService<BffAuthStateProvider>());
-builder.Services.AddScoped<IncludeCredentialsHandler>();
+    sp => sp.GetRequiredService<JwtAuthStateProvider>());
+builder.Services.AddScoped<JwtTokenHandler>();
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
 
-var bffBaseUrl = builder.Configuration["BffBaseUrl"] ?? "https://localhost:7300";
+var authApiBaseUrl = builder.Configuration["AuthApiBaseUrl"] ?? "https://localhost:7100";
 
-// BFF-specific endpoints: /bff/login, /bff/logout, /bff/user
-builder.Services.AddHttpClient("BffClient",
-    client => client.BaseAddress = new Uri(bffBaseUrl))
-    .AddHttpMessageHandler<IncludeCredentialsHandler>();
-
-// All AuthServer API calls routed through the BFF proxy.
-// Trailing slash is required so relative paths (e.g. "api/admin/...") resolve correctly.
+// All API calls go directly to the AuthServer. The JwtTokenHandler attaches the
+// encrypted access token as a Bearer header on every request.
 builder.Services.AddHttpClient("AuthAPI",
-    client => client.BaseAddress = new Uri($"{bffBaseUrl.TrimEnd('/')}/bff/proxy/"))
-    .AddHttpMessageHandler<IncludeCredentialsHandler>();
+    client => client.BaseAddress = new Uri(authApiBaseUrl.TrimEnd('/') + "/"))
+    .AddHttpMessageHandler<JwtTokenHandler>();
 
-// Default injected HttpClient uses the proxied API client
-builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("AuthAPI"));
+builder.Services.AddScoped(sp =>
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("AuthAPI"));
 
 // ─── App Services ─────────────────────────────────────────────────────────────
 

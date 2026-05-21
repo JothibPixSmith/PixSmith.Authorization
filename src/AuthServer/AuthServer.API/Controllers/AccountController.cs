@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
-using System.Security.Claims;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace AuthServer.API.Controllers;
 
@@ -14,7 +15,8 @@ public sealed class AccountController(
     IAccountService accountService,
     IUserService userService,
     SignInManager<IdentityUser<Guid>> signInManager,
-    UserManager<IdentityUser<Guid>> userManager) : ControllerBase
+    UserManager<IdentityUser<Guid>> userManager,
+    IHttpClientFactory httpClientFactory) : ControllerBase
 {
     // ─── Register ─────────────────────────────────────────────────────────────
 
@@ -27,47 +29,56 @@ public sealed class AccountController(
         return result.IsSuccess ? Ok(result.Value) : BadRequest(new { error = result.Error });
     }
 
-    // ─── External SSO ─────────────────────────────────────────────────────────
+    // ─── Login ────────────────────────────────────────────────────────────────
 
-    [HttpGet("external-login")]
-    public IActionResult ExternalLogin(string provider, string returnUrl = "/")
+    [HttpPost("login")]
+    [AllowAnonymous]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(401)]
+    [ProducesResponseType(423)]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var redirectUrl = Url.Action(nameof(ExternalLoginCallback), values: new { returnUrl });
-        var properties  = signInManager.ConfigureExternalAuthenticationProperties(provider, redirectUrl);
-        return Challenge(properties, provider);
-    }
+        var identityUser = await userManager.FindByEmailAsync(request.Email);
+        if (identityUser is null)
+            return Unauthorized(new { error = "Invalid email or password." });
 
-    [HttpGet("external-login-callback")]
-    public async Task<IActionResult> ExternalLoginCallback(string? returnUrl = null)
-    {
-        var info = await signInManager.GetExternalLoginInfoAsync();
-        if (info is null) return Redirect($"/?error=external-login-failed");
+        var signInResult = await signInManager.CheckPasswordSignInAsync(
+            identityUser, request.Password, lockoutOnFailure: true);
 
-        // Happy path: existing linked account signs straight in
-        var signInResult = await signInManager.ExternalLoginSignInAsync(
-            info.LoginProvider, info.ProviderKey,
-            isPersistent: false, bypassTwoFactor: true);
+        if (signInResult.IsLockedOut)
+            return StatusCode(423, new { error = "Account is locked out. Please try again later." });
 
-        if (signInResult.Succeeded)
-            return LocalRedirect(returnUrl ?? "/");
+        if (!signInResult.Succeeded)
+            return Unauthorized(new { error = "Invalid email or password." });
 
-        // New account or new provider link: create/link domain + Identity
-        var email     = info.Principal.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
-        var firstName = info.Principal.FindFirstValue(ClaimTypes.GivenName);
-        var lastName  = info.Principal.FindFirstValue(ClaimTypes.Surname);
+        // Issue an encrypted access token via OpenIddict password grant (loopback)
+        var tokenEndpoint = $"{Request.Scheme}://{Request.Host}/connect/token";
+        var http = httpClientFactory.CreateClient("Self");
 
-        var linkResult = await accountService.LinkExternalLoginAsync(
-            info.LoginProvider, info.ProviderKey, info, email, firstName, lastName);
+        using var tokenResponse = await http.PostAsync(tokenEndpoint,
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "password",
+                ["username"]   = identityUser.UserName!,
+                ["password"]   = request.Password,
+                ["scope"]      = "openid profile email roles offline_access api",
+                ["client_id"]  = "blazor-client",
+            }));
 
-        if (!linkResult.IsSuccess)
-            return Redirect($"/?error={Uri.EscapeDataString(linkResult.Error!)}");
+        if (!tokenResponse.IsSuccessStatusCode)
+            return StatusCode(500, new { error = "Token issuance failed." });
 
-        // Sign the user in via the newly linked Identity login
-        var identityUser = await userManager.FindByEmailAsync(email);
-        if (identityUser is not null)
-            await signInManager.SignInAsync(identityUser, isPersistent: false);
+        var tokenData = await tokenResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var userResult = await userService.GetByIdAsync(identityUser.Id);
 
-        return LocalRedirect(returnUrl ?? "/");
+        return Ok(new
+        {
+            access_token  = tokenData.GetProperty("access_token").GetString(),
+            token_type    = "Bearer",
+            expires_in    = tokenData.TryGetProperty("expires_in", out var expProp) ? expProp.GetInt32() : 3600,
+            refresh_token = tokenData.TryGetProperty("refresh_token", out var rfProp) ? rfProp.GetString() : null,
+            user          = userResult.IsSuccess ? userResult.Value : null,
+        });
     }
 
     // ─── Profile ──────────────────────────────────────────────────────────────

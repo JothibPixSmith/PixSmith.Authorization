@@ -1,100 +1,133 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.JSInterop;
+using System.Net.Http.Json;
 using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
 
 namespace BlazorClient.Services;
 
-public sealed class JwtAuthStateProvider(IJSRuntime js) : AuthenticationStateProvider
+/// <summary>
+/// Stores the encrypted access token and a separate user-info snapshot in localStorage.
+/// Claims are derived from the user-info snapshot, not by parsing the token, because
+/// OpenIddict issues encrypted (JWE) access tokens that cannot be decoded client-side.
+/// </summary>
+public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpClientFactory)
+    : AuthenticationStateProvider
 {
-	private const string TokenKey = "access_token";
+    private const string TokenKey    = "access_token";
+    private const string UserInfoKey = "user_info";
 
-	public override async Task<AuthenticationState> GetAuthenticationStateAsync()
-	{
-		try
-		{
-			var token = await js.InvokeAsync<string?>("localStorage.getItem", TokenKey);
-			if (string.IsNullOrWhiteSpace(token) || IsExpired(token))
-				return Anonymous();
+    public override async Task<AuthenticationState> GetAuthenticationStateAsync()
+    {
+        try
+        {
+            var token       = await js.InvokeAsync<string?>("localStorage.getItem", TokenKey);
+            var userInfoRaw = await js.InvokeAsync<string?>("localStorage.getItem", UserInfoKey);
 
-			return Build(token);
-		}
-		catch
-		{
-			return Anonymous();
-		}
-	}
+            if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(userInfoRaw))
+                return Anonymous();
 
-	public async Task MarkAuthenticatedAsync(string accessToken)
-	{
-		await js.InvokeVoidAsync("localStorage.setItem", TokenKey, accessToken);
-		NotifyAuthenticationStateChanged(Task.FromResult(Build(accessToken)));
-	}
+            var claims = BuildClaims(userInfoRaw);
+            if (claims.Count == 0) return Anonymous();
 
-	public async Task LogOutAsync()
-	{
-		await js.InvokeVoidAsync("localStorage.removeItem", TokenKey);
-		NotifyAuthenticationStateChanged(Task.FromResult(Anonymous()));
-	}
+            var identity = new ClaimsIdentity(claims, "jwt", "name", "role");
+            return new AuthenticationState(new ClaimsPrincipal(identity));
+        }
+        catch
+        {
+            return Anonymous();
+        }
+    }
 
-	public async Task<string?> GetAccessTokenAsync()
-	{
-		try
-		{
-			var token = await js.InvokeAsync<string?>("localStorage.getItem", TokenKey);
-			return !string.IsNullOrWhiteSpace(token) && !IsExpired(token) ? token : null;
-		}
-		catch { return null; }
-	}
+    /// <summary>
+    /// POST /api/account/login; on success persists the token + user snapshot and
+    /// notifies Blazor's auth state cascade. Returns null on success, error message otherwise.
+    /// </summary>
+    public async Task<string?> LoginAsync(string email, string password)
+    {
+        try
+        {
+            var http     = httpClientFactory.CreateClient("AuthAPI");
+            var response = await http.PostAsJsonAsync("api/account/login", new { email, password });
 
-	// ── Helpers ───────────────────────────────────────────────────────────────
+            if (!response.IsSuccessStatusCode)
+            {
+                JsonElement? errorDoc = null;
+                try { errorDoc = await response.Content.ReadFromJsonAsync<JsonElement>(); } catch { }
 
-	private static AuthenticationState Build(string token)
-	{
-		var claims = ParseClaims(token);
-		// nameType="name", roleType="role" matches the claim names OpenIddict puts in the JWT
-		var identity = new ClaimsIdentity(claims, "jwt", "name", "role");
-		return new AuthenticationState(new ClaimsPrincipal(identity));
-	}
+                return response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "Invalid email or password.",
+                    (System.Net.HttpStatusCode)423         => "Account is locked out.",
+                    _ => errorDoc?.TryGetProperty("error", out var e) == true
+                         ? e.GetString() ?? "Sign in failed."
+                         : "Sign in failed. Please try again."
+                };
+            }
 
-	private static AuthenticationState Anonymous() =>
-		new(new ClaimsPrincipal(new ClaimsIdentity()));
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-	private static bool IsExpired(string token)
-	{
-		var claims = ParseClaims(token);
-		var exp = claims.FirstOrDefault(c => c.Type == "exp")?.Value;
-		return exp is null
-			|| !long.TryParse(exp, out var expSeconds)
-			|| DateTimeOffset.UtcNow.ToUnixTimeSeconds() >= expSeconds;
-	}
+            var token = body.GetProperty("access_token").GetString()!;
+            await js.InvokeVoidAsync("localStorage.setItem", TokenKey, token);
 
-	private static List<Claim> ParseClaims(string token)
-	{
-		var parts = token.Split('.');
-		if (parts.Length < 2) return [];
+            if (body.TryGetProperty("user", out var userProp))
+                await js.InvokeVoidAsync("localStorage.setItem", UserInfoKey, userProp.GetRawText());
 
-		var payload = parts[1].Replace('-', '+').Replace('_', '/');
-		payload = (payload.Length % 4) switch
-		{
-			2 => payload + "==",
-			3 => payload + "=",
-			_ => payload
-		};
+            var authState = await GetAuthenticationStateAsync();
+            NotifyAuthenticationStateChanged(Task.FromResult(authState));
+            return null;
+        }
+        catch
+        {
+            return "Unable to reach the server. Please try again.";
+        }
+    }
 
-		var json = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
-		using var doc = JsonDocument.Parse(json);
+    public async Task LogOutAsync()
+    {
+        await js.InvokeVoidAsync("localStorage.removeItem", TokenKey);
+        await js.InvokeVoidAsync("localStorage.removeItem", UserInfoKey);
+        NotifyAuthenticationStateChanged(Task.FromResult(Anonymous()));
+    }
 
-		var claims = new List<Claim>();
-		foreach (var prop in doc.RootElement.EnumerateObject())
-		{
-			if (prop.Value.ValueKind == JsonValueKind.Array)
-				foreach (var item in prop.Value.EnumerateArray())
-					claims.Add(new Claim(prop.Name, item.ToString()));
-			else
-				claims.Add(new Claim(prop.Name, prop.Value.ToString()));
-		}
-		return claims;
-	}
+    public async Task<string?> GetAccessTokenAsync()
+    {
+        try
+        {
+            var token = await js.InvokeAsync<string?>("localStorage.getItem", TokenKey);
+            return !string.IsNullOrWhiteSpace(token) ? token : null;
+        }
+        catch { return null; }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static AuthenticationState Anonymous() =>
+        new(new ClaimsPrincipal(new ClaimsIdentity()));
+
+    private static List<Claim> BuildClaims(string userInfoJson)
+    {
+        try
+        {
+            using var doc  = JsonDocument.Parse(userInfoJson);
+            var root       = doc.RootElement;
+            var claims     = new List<Claim>();
+
+            if (root.TryGetProperty("id", out var id))
+                claims.Add(new Claim("sub", id.ToString()));
+            if (root.TryGetProperty("username", out var name))
+                claims.Add(new Claim("name", name.GetString() ?? string.Empty));
+            if (root.TryGetProperty("email", out var email))
+                claims.Add(new Claim("email", email.GetString() ?? string.Empty));
+            if (root.TryGetProperty("roles", out var roles) && roles.ValueKind == JsonValueKind.Array)
+                foreach (var role in roles.EnumerateArray())
+                    claims.Add(new Claim("role", role.GetString() ?? string.Empty));
+
+            return claims;
+        }
+        catch
+        {
+            return [];
+        }
+    }
 }

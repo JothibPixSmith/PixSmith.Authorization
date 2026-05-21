@@ -35,24 +35,6 @@ builder.Services.AddCors(options =>
 	});
 });
 
-// External SSO providers
-builder.Services
-	.AddAuthentication()
-	.AddGoogle(options =>
-	{
-		options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "google-client-id";
-		options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "google-client-secret";
-		options.CallbackPath = "/signin-google";
-		options.SaveTokens = true;
-	})
-	.AddMicrosoftAccount(options =>
-	{
-		options.ClientId = builder.Configuration["Authentication:Microsoft:ClientId"] ?? "ms-client-id";
-		options.ClientSecret = builder.Configuration["Authentication:Microsoft:ClientSecret"] ?? "ms-client-secret";
-		options.CallbackPath = "/signin-microsoft";
-		options.SaveTokens = true;
-	});
-
 // Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

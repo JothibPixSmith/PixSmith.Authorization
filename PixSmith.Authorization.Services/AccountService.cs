@@ -14,14 +14,12 @@ public sealed class AccountService(
     public async Task<Result<UserDto>> RegisterAsync(
         RegisterUserRequest request, CancellationToken ct = default)
     {
-        // Domain user (profile, roles, audit state)
         var domainResult = await userService.RegisterAsync(request, ct);
         if (!domainResult.IsSuccess)
             return Result<UserDto>.Failure(domainResult.Error!);
 
         var dto = domainResult.Value!;
 
-        // Identity user (password hashing, lockout, claims infrastructure)
         var identityUser = new IdentityUser<Guid>
         {
             Id       = dto.Id,
@@ -41,30 +39,5 @@ public sealed class AccountService(
 
         logger.LogInformation("Registered user {Email}", request.Email);
         return Result<UserDto>.Success(dto);
-    }
-
-    public async Task<Result<UserDto>> LinkExternalLoginAsync(
-        string provider, string providerKey, ExternalLoginInfo info,
-        string email, string? firstName, string? lastName,
-        CancellationToken ct = default)
-    {
-        // Find or create the domain user
-        var userResult = await userService.FindOrCreateFromExternalLoginAsync(
-            provider, providerKey, email, firstName, lastName, ct);
-
-        if (!userResult.IsSuccess)
-            return userResult;
-
-        // Link to the Identity user so future ExternalLoginSignInAsync calls resolve it
-        var identityUser = await userManager.FindByEmailAsync(email);
-        if (identityUser is not null)
-        {
-            var existing = await userManager.GetLoginsAsync(identityUser);
-            if (!existing.Any(l => l.LoginProvider == provider && l.ProviderKey == providerKey))
-                await userManager.AddLoginAsync(identityUser, info);
-        }
-
-        logger.LogInformation("Linked {Provider} external login for {Email}", provider, email);
-        return userResult;
     }
 }

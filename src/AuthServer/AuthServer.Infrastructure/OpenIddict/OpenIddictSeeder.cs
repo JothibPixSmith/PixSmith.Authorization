@@ -74,40 +74,6 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
 		else
 			await manager.UpdateAsync(blazorClient, blazorDescriptor, cancellationToken);
 
-		// ─── Seed Blazor BFF Client (Confidential / ROPC) ─────────────────────
-		// A confidential client used by BlazorClient.Server to call /connect/token
-		// server-side. Tokens are encrypted and never leave the BFF process.
-
-		var bffDescriptor = new OpenIddictApplicationDescriptor
-		{
-			ClientId = "blazor-bff",
-			ClientSecret = "bff-super-secret-change-in-production",
-			ClientType = OpenIddictConstants.ClientTypes.Confidential,
-			DisplayName = "Blazor BFF Server",
-			// Used only for the SSO callback (password grant doesn't need a redirect URI)
-			RedirectUris = { new Uri("https://localhost:7300/bff/sso-callback") },
-			Permissions =
-			{
-				OpenIddictConstants.Permissions.Endpoints.Authorization,
-				OpenIddictConstants.Permissions.Endpoints.Token,
-				OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
-				OpenIddictConstants.Permissions.GrantTypes.Password,
-				OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
-				OpenIddictConstants.Permissions.ResponseTypes.Code,
-				OpenIddictConstants.Permissions.Scopes.Email,
-				OpenIddictConstants.Permissions.Scopes.Profile,
-				OpenIddictConstants.Permissions.Scopes.Roles,
-				OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess,
-				"scp:api",
-			}
-		};
-
-		var bffClient = await manager.FindByClientIdAsync("blazor-bff", cancellationToken);
-		if (bffClient is null)
-			await manager.CreateAsync(bffDescriptor, cancellationToken);
-		else
-			await manager.UpdateAsync(bffClient, bffDescriptor, cancellationToken);
-
 		// ─── Seed Machine-to-Machine (M2M) Client ──────────────────────────
 
 		if (await manager.FindByClientIdAsync("m2m-client", cancellationToken) is null)
