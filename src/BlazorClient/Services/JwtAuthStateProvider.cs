@@ -7,9 +7,12 @@ using System.Text.Json;
 namespace BlazorClient.Services;
 
 /// <summary>
-/// Stores the encrypted access token and a separate user-info snapshot in localStorage.
-/// Claims are derived from the user-info snapshot, not by parsing the token, because
-/// OpenIddict issues encrypted (JWE) access tokens that cannot be decoded client-side.
+/// Manages auth state by:
+///   1. POSTing password credentials directly to the OpenIddict /connect/token endpoint.
+///   2. Storing the returned encrypted access token in localStorage (used only as a Bearer header).
+///   3. Fetching /api/account/me and storing the user snapshot separately — claims are derived
+///      from that snapshot, not by parsing the token, because OpenIddict issues JWE tokens
+///      that cannot be decoded client-side.
 /// </summary>
 public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpClientFactory)
     : AuthenticationStateProvider
@@ -40,47 +43,59 @@ public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpC
     }
 
     /// <summary>
-    /// POST /api/account/login; on success persists the token + user snapshot and
-    /// notifies Blazor's auth state cascade. Returns null on success, error message otherwise.
+    /// Exchanges credentials for a token via the standard OAuth2 password grant, then
+    /// fetches the user profile to populate the claims snapshot. Returns null on success,
+    /// or a human-readable error message on failure.
     /// </summary>
     public async Task<string?> LoginAsync(string email, string password)
     {
-        try
-        {
-            var http     = httpClientFactory.CreateClient("AuthAPI");
-            var response = await http.PostAsJsonAsync("api/account/login", new { email, password });
+        var http = httpClientFactory.CreateClient("AuthAPI");
 
-            if (!response.IsSuccessStatusCode)
+        // Step 1 — get the encrypted access token from the OpenIddict token endpoint.
+        using var tokenResponse = await http.PostAsync("connect/token",
+            new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                JsonElement? errorDoc = null;
-                try { errorDoc = await response.Content.ReadFromJsonAsync<JsonElement>(); } catch { }
+                ["grant_type"] = "password",
+                ["username"]   = email,
+                ["password"]   = password,
+                ["scope"]      = "openid profile email roles offline_access api",
+                ["client_id"]  = "blazor-client",
+            }));
 
-                return response.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.Unauthorized => "Invalid email or password.",
-                    (System.Net.HttpStatusCode)423         => "Account is locked out.",
-                    _ => errorDoc?.TryGetProperty("error", out var e) == true
-                         ? e.GetString() ?? "Sign in failed."
-                         : "Sign in failed. Please try again."
-                };
-            }
-
-            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-            var token = body.GetProperty("access_token").GetString()!;
-            await js.InvokeVoidAsync("localStorage.setItem", TokenKey, token);
-
-            if (body.TryGetProperty("user", out var userProp))
-                await js.InvokeVoidAsync("localStorage.setItem", UserInfoKey, userProp.GetRawText());
-
-            var authState = await GetAuthenticationStateAsync();
-            NotifyAuthenticationStateChanged(Task.FromResult(authState));
-            return null;
-        }
-        catch
+        if (!tokenResponse.IsSuccessStatusCode)
         {
-            return "Unable to reach the server. Please try again.";
+            JsonElement? errorDoc = null;
+            try { errorDoc = await tokenResponse.Content.ReadFromJsonAsync<JsonElement>(); } catch { }
+
+            var desc = errorDoc?.TryGetProperty("error_description", out var d) == true
+                ? d.GetString()
+                : null;
+            return desc ?? "Sign in failed. Please try again.";
         }
+
+        var tokenBody   = await tokenResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var accessToken = tokenBody.GetProperty("access_token").GetString()!;
+
+        // Step 2 — persist the token so JwtTokenHandler includes it on the next request.
+        await js.InvokeVoidAsync("localStorage.setItem", TokenKey, accessToken);
+
+        // Step 3 — fetch the user profile, attaching the token directly so we don't
+        // depend on JwtTokenHandler racing localStorage for this immediate follow-up call.
+        using var meRequest = new HttpRequestMessage(HttpMethod.Get, "api/account/me");
+        meRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var meResponse = await http.SendAsync(meRequest);
+        if (!meResponse.IsSuccessStatusCode)
+        {
+            await js.InvokeVoidAsync("localStorage.removeItem", TokenKey);
+            return "Signed in but failed to load user profile.";
+        }
+
+        var userInfoRaw = await meResponse.Content.ReadAsStringAsync();
+        await js.InvokeVoidAsync("localStorage.setItem", UserInfoKey, userInfoRaw);
+
+        var authState = await GetAuthenticationStateAsync();
+        NotifyAuthenticationStateChanged(Task.FromResult(authState));
+        return null;
     }
 
     public async Task LogOutAsync()
@@ -109,9 +124,9 @@ public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpC
     {
         try
         {
-            using var doc  = JsonDocument.Parse(userInfoJson);
-            var root       = doc.RootElement;
-            var claims     = new List<Claim>();
+            using var doc = JsonDocument.Parse(userInfoJson);
+            var root      = doc.RootElement;
+            var claims    = new List<Claim>();
 
             if (root.TryGetProperty("id", out var id))
                 claims.Add(new Claim("sub", id.ToString()));
