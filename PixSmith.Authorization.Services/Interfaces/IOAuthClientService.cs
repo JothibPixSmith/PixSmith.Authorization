@@ -1,4 +1,4 @@
-﻿using AuthServer.Domain.Results;
+﻿using PixSmith.Authorization.Domain.Results;
 using PixSmith.Authorization.DataContext;
 
 namespace PixSmith.Authorization.Services.Interfaces

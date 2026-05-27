@@ -1,4 +1,4 @@
-using AuthServer.Domain.Entities;
+﻿using PixSmith.Authorization.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PixSmith.Authorization.DataContext;

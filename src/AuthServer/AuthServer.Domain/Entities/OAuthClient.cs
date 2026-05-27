@@ -1,6 +1,6 @@
-using AuthServer.Domain.Enums;
+﻿using PixSmith.Authorization.Domain.Enums;
 
-namespace AuthServer.Domain.Entities;
+namespace PixSmith.Authorization.Domain.Entities;
 
 /// <summary>
 /// Represents a registered OAuth 2.0 / OIDC client application.

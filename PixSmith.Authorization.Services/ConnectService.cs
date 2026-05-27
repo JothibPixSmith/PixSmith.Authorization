@@ -1,4 +1,4 @@
-using AuthServer.Domain.Results;
+﻿using PixSmith.Authorization.Domain.Results;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;

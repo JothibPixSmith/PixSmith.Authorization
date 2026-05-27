@@ -1,6 +1,6 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 
-namespace BlazorClient.Services;
+namespace PixSmith.Authorization.BlazorClient.Services;
 
 // ─── Models ────────────────────────────────────────────────────────────────
 

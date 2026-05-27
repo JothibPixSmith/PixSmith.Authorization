@@ -1,4 +1,4 @@
-using AuthServer.API;
+﻿using PixSmith.Authorization.API;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using PixSmith.Authorization.DataContext;
@@ -20,20 +20,6 @@ builder.Host.UseSerilog();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
-
-// CORS - allow Blazor client origin
-builder.Services.AddCors(options =>
-{
-	options.AddPolicy("BlazorClient", policy =>
-	{
-		policy.WithOrigins(
-				builder.Configuration["AllowedOrigins:BlazorClient"]
-				?? "https://localhost:7200")
-			  .AllowAnyHeader()
-			  .AllowAnyMethod()
-			  .AllowCredentials();
-	});
-});
 
 // Controllers + Swagger
 builder.Services.AddControllers();
@@ -72,11 +58,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
+app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseSerilogRequestLogging();
-app.UseCors("BlazorClient");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 app.Run();

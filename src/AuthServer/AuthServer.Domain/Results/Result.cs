@@ -1,4 +1,4 @@
-﻿namespace AuthServer.Domain.Results
+﻿namespace PixSmith.Authorization.Domain.Results
 {
 	public sealed record Result<T>(bool IsSuccess, T? Value, string? Error)
 	{

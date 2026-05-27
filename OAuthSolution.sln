@@ -1,14 +1,19 @@
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.4.11605.240
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.Domain", "src\AuthServer\AuthServer.Domain\PixSmith.Authorization.Domain.csproj", "{11111111-1111-1111-1111-111111111111}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AuthServer.Infrastructure", "src\AuthServer\AuthServer.Infrastructure\AuthServer.Infrastructure.csproj", "{33333333-3333-3333-3333-333333333333}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.Infrastructure", "src\AuthServer\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj", "{33333333-3333-3333-3333-333333333333}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.Application", "src\AuthServer\AuthServer.Application\PixSmith.Authorization.Application.csproj", "{88888888-8888-8888-8888-888888888888}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.API", "src\AuthServer\AuthServer.API\PixSmith.Authorization.API.csproj", "{44444444-4444-4444-4444-444444444444}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BlazorClient", "src\BlazorClient\BlazorClient.csproj", "{55555555-5555-5555-5555-555555555555}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.BlazorClient", "src\BlazorClient\PixSmith.Authorization.BlazorClient.csproj", "{55555555-5555-5555-5555-555555555555}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PixSmith.Authorization.BlazorClient.Server", "src\BlazorClient.Server\PixSmith.Authorization.BlazorClient.Server.csproj", "{99999999-9999-9999-9999-999999999999}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{66666666-6666-6666-6666-666666666666}"
 EndProject
@@ -36,6 +41,10 @@ Global
 		{33333333-3333-3333-3333-333333333333}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{33333333-3333-3333-3333-333333333333}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{33333333-3333-3333-3333-333333333333}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88888888-8888-8888-8888-888888888888}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88888888-8888-8888-8888-888888888888}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88888888-8888-8888-8888-888888888888}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88888888-8888-8888-8888-888888888888}.Release|Any CPU.Build.0 = Release|Any CPU
 		{44444444-4444-4444-4444-444444444444}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{44444444-4444-4444-4444-444444444444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{44444444-4444-4444-4444-444444444444}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -44,6 +53,10 @@ Global
 		{55555555-5555-5555-5555-555555555555}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{55555555-5555-5555-5555-555555555555}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{55555555-5555-5555-5555-555555555555}.Release|Any CPU.Build.0 = Release|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{99999999-9999-9999-9999-999999999999}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2A7FC23E-E0FC-48DB-9197-4B5B893D0B06}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{2A7FC23E-E0FC-48DB-9197-4B5B893D0B06}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2A7FC23E-E0FC-48DB-9197-4B5B893D0B06}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -63,14 +76,16 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{11111111-1111-1111-1111-111111111111} = {77777777-7777-7777-7777-777777777777}
 		{33333333-3333-3333-3333-333333333333} = {77777777-7777-7777-7777-777777777777}
+		{88888888-8888-8888-8888-888888888888} = {77777777-7777-7777-7777-777777777777}
 		{44444444-4444-4444-4444-444444444444} = {77777777-7777-7777-7777-777777777777}
 		{55555555-5555-5555-5555-555555555555} = {6205AA0B-36CD-4AD2-A696-B7F6AFAA0AE2}
+		{99999999-9999-9999-9999-999999999999} = {6205AA0B-36CD-4AD2-A696-B7F6AFAA0AE2}
 		{77777777-7777-7777-7777-777777777777} = {66666666-6666-6666-6666-666666666666}
 		{2A7FC23E-E0FC-48DB-9197-4B5B893D0B06} = {77777777-7777-7777-7777-777777777777}
 		{730E6B73-9248-47E2-BB5B-3953243F8A81} = {77777777-7777-7777-7777-777777777777}
 		{DA345AA7-7D72-453D-9687-C524719E0B06} = {77777777-7777-7777-7777-777777777777}
 	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
+	GlobalSection(ExtensibilityGlobals) = preSolution
 		SolutionGuid = {8A55CD17-178C-427B-9B50-8659E81FC670}
 	EndGlobalSection
 EndGlobal

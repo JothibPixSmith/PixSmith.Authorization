@@ -4,17 +4,19 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>AuthServer.API</RootNamespace>
+    <RootNamespace>PixSmith.Authorization.API</RootNamespace>
     <UserSecretsId>authserver-api-secrets</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
     <ProjectReference Include="..\..\..\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
-    <ProjectReference Include="..\AuthServer.Infrastructure\AuthServer.Infrastructure.csproj" />
+    <ProjectReference Include="..\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\BlazorClient\PixSmith.Authorization.BlazorClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

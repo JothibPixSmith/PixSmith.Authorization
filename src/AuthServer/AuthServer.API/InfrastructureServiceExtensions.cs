@@ -1,4 +1,4 @@
-using AuthServer.Infrastructure.OpenIddict;
+﻿using PixSmith.Authorization.Infrastructure.OpenIddict;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
@@ -9,7 +9,7 @@ using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
-namespace AuthServer.API;
+namespace PixSmith.Authorization.API;
 
 public static class InfrastructureServiceExtensions
 {
@@ -120,6 +120,16 @@ public static class InfrastructureServiceExtensions
 					ctx.User.HasClaim(Claims.Private.Scope, "admin"));
 			});
 		});
+
+		// ─── CORS ───────────────────────────────────────────────────────────
+
+		var blazorOrigin = configuration["AllowedOrigins:BlazorClient"] ?? "https://localhost:7200";
+		services.AddCors(options =>
+			options.AddDefaultPolicy(policy =>
+				policy
+					.WithOrigins(blazorOrigin)
+					.AllowAnyHeader()
+					.AllowAnyMethod()));
 
 		// Internal loopback client used by AccountController.Login to call /connect/token.
 		// Trusts the localhost dev certificate so HTTPS works without extra setup.

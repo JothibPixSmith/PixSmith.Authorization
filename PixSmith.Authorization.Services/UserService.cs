@@ -1,5 +1,5 @@
-using AuthServer.Domain.Entities;
-using AuthServer.Domain.Results;
+﻿using PixSmith.Authorization.Domain.Entities;
+using PixSmith.Authorization.Domain.Results;
 using Microsoft.Extensions.Logging;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Repositories.Interfaces;

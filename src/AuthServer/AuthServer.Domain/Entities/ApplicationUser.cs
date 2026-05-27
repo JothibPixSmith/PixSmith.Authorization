@@ -1,7 +1,7 @@
-using AuthServer.Domain.Enums;
-using AuthServer.Domain.Events;
+﻿using PixSmith.Authorization.Domain.Enums;
+using PixSmith.Authorization.Domain.Events;
 
-namespace AuthServer.Domain.Entities;
+namespace PixSmith.Authorization.Domain.Entities;
 
 /// <summary>
 /// Core user entity - the heart of the domain.

@@ -1,6 +1,6 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 
-namespace BlazorClient.Services;
+namespace PixSmith.Authorization.BlazorClient.Services;
 
 public sealed class JwtTokenHandler(JwtAuthStateProvider authProvider) : DelegatingHandler
 {

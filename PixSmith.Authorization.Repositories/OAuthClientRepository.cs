@@ -1,5 +1,5 @@
-using AuthServer.Domain.Entities;
-using AuthServer.Domain.Enums;
+﻿using PixSmith.Authorization.Domain.Entities;
+using PixSmith.Authorization.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Repositories.Interfaces;

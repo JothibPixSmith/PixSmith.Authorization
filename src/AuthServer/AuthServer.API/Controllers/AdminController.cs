@@ -1,11 +1,11 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
 
-namespace AuthServer.API.Controllers;
+namespace PixSmith.Authorization.API.Controllers;
 
 [ApiController]
 [Route("api/admin")]

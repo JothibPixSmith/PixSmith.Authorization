@@ -1,9 +1,9 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
 
-namespace AuthServer.Infrastructure.OpenIddict;
+namespace PixSmith.Authorization.Infrastructure.OpenIddict;
 
 /// <summary>
 /// Seeds default OAuth clients and scopes into OpenIddict on startup.

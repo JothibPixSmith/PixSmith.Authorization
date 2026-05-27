@@ -1,4 +1,4 @@
-namespace AuthServer.Domain.Enums;
+﻿namespace PixSmith.Authorization.Domain.Enums;
 
 public enum ClientType
 {

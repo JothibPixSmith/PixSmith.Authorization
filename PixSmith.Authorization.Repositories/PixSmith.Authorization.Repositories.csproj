@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
     <ProjectReference Include="..\src\AuthServer\AuthServer.Domain\PixSmith.Authorization.Domain.csproj" />
-    <ProjectReference Include="..\src\AuthServer\AuthServer.Infrastructure\AuthServer.Infrastructure.csproj" />
+    <ProjectReference Include="..\src\AuthServer\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,10 +1,10 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace BlazorClient.Server.Controllers;
+namespace PixSmith.Authorization.BlazorClient.Server.Controllers;
 
 [ApiController]
 [Route("bff")]

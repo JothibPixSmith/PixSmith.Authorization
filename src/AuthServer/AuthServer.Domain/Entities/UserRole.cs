@@ -1,4 +1,4 @@
-namespace AuthServer.Domain.Entities;
+﻿namespace PixSmith.Authorization.Domain.Entities;
 
 /// <summary>Value object for a role assigned to a user.</summary>
 public sealed class UserRole

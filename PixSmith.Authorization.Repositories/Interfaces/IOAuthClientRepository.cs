@@ -1,4 +1,4 @@
-﻿using AuthServer.Domain.Entities;
+﻿using PixSmith.Authorization.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Text;

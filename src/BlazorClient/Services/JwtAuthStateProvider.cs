@@ -1,10 +1,10 @@
-using Microsoft.AspNetCore.Components.Authorization;
+﻿using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.JSInterop;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 
-namespace BlazorClient.Services;
+namespace PixSmith.Authorization.BlazorClient.Services;
 
 /// <summary>
 /// Manages auth state by:

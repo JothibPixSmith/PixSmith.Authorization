@@ -1,4 +1,4 @@
-namespace AuthServer.Domain.Events;
+﻿namespace PixSmith.Authorization.Domain.Events;
 
 public abstract record DomainEvent(DateTimeOffset OccurredAt)
 {

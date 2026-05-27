@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
@@ -7,7 +7,7 @@ using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
-namespace AuthServer.API.Controllers;
+namespace PixSmith.Authorization.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

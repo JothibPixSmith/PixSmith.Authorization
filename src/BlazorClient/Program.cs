@@ -1,5 +1,5 @@
-using BlazorClient;
-using BlazorClient.Services;
+﻿using PixSmith.Authorization.BlazorClient;
+using PixSmith.Authorization.BlazorClient.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -18,12 +18,14 @@ builder.Services.AddScoped<JwtTokenHandler>();
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
 
-var authApiBaseUrl = builder.Configuration["AuthApiBaseUrl"] ?? "https://localhost:7100";
+// Use the configured API authority so this works whether the WASM is hosted by
+// the API server (same origin) or running standalone on a different port.
+var apiBase = builder.Configuration["Auth:Authority"] is string authority
+    ? authority.TrimEnd('/') + "/"
+    : builder.HostEnvironment.BaseAddress;
 
-// All API calls go directly to the AuthServer. The JwtTokenHandler attaches the
-// encrypted access token as a Bearer header on every request.
 builder.Services.AddHttpClient("AuthAPI",
-    client => client.BaseAddress = new Uri(authApiBaseUrl.TrimEnd('/') + "/"))
+    client => client.BaseAddress = new Uri(apiBase))
     .AddHttpMessageHandler<JwtTokenHandler>();
 
 builder.Services.AddScoped(sp =>
