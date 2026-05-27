@@ -58,7 +58,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseSerilogRequestLogging();

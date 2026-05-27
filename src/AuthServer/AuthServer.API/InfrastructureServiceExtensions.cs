@@ -121,16 +121,6 @@ public static class InfrastructureServiceExtensions
 			});
 		});
 
-		// ─── CORS ───────────────────────────────────────────────────────────
-
-		var blazorOrigin = configuration["AllowedOrigins:BlazorClient"] ?? "https://localhost:7200";
-		services.AddCors(options =>
-			options.AddDefaultPolicy(policy =>
-				policy
-					.WithOrigins(blazorOrigin)
-					.AllowAnyHeader()
-					.AllowAnyMethod()));
-
 		// Internal loopback client used by AccountController.Login to call /connect/token.
 		// Trusts the localhost dev certificate so HTTPS works without extra setup.
 		services.AddHttpClient("Self").ConfigurePrimaryHttpMessageHandler(() =>

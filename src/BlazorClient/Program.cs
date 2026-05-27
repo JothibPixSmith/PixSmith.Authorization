@@ -18,14 +18,8 @@ builder.Services.AddScoped<JwtTokenHandler>();
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
 
-// Use the configured API authority so this works whether the WASM is hosted by
-// the API server (same origin) or running standalone on a different port.
-var apiBase = builder.Configuration["Auth:Authority"] is string authority
-    ? authority.TrimEnd('/') + "/"
-    : builder.HostEnvironment.BaseAddress;
-
 builder.Services.AddHttpClient("AuthAPI",
-    client => client.BaseAddress = new Uri(apiBase))
+    client => client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress))
     .AddHttpMessageHandler<JwtTokenHandler>();
 
 builder.Services.AddScoped(sp =>

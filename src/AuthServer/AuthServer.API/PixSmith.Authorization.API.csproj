@@ -12,7 +12,6 @@
     <ProjectReference Include="..\..\..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
     <ProjectReference Include="..\..\..\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
     <ProjectReference Include="..\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\BlazorClient\PixSmith.Authorization.BlazorClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>
