@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
@@ -9,7 +10,7 @@ namespace PixSmith.Authorization.Infrastructure.OpenIddict;
 /// Seeds default OAuth clients and scopes into OpenIddict on startup.
 /// In production you'd manage this through the Admin dashboard instead.
 /// </summary>
-public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHostedService
+public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfiguration configuration) : IHostedService
 {
 	public async Task StartAsync(CancellationToken cancellationToken)
 	{
@@ -30,21 +31,24 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
 		await EnsureScopeAsync(scopeManager, "admin", "Admin Access", cancellationToken);
 
 		// ─── Seed Blazor WASM Client (Public / PKCE + ROPC) ──────────────────
-		// Upsert so existing databases pick up any permission changes on restart.
+
+		var blazorClientId = configuration["OpenIddict:BlazorClient:ClientId"]
+			?? throw new InvalidOperationException("OpenIddict:BlazorClient:ClientId is required.");
+		var blazorBase = (configuration["OpenIddict:BlazorClient:BaseUri"] ?? "https://localhost:7100").TrimEnd('/');
 
 		var blazorDescriptor = new OpenIddictApplicationDescriptor
 		{
-			ClientId = "blazor-client",
+			ClientId = blazorClientId,
 			ClientType = OpenIddictConstants.ClientTypes.Public,
 			DisplayName = "Blazor WASM Client",
 			RedirectUris =
 			{
-				new Uri("https://localhost:7200/authentication/login-callback"),
-				new Uri("https://localhost:7200/signin-oidc"),
+				new Uri($"{blazorBase}/authentication/login-callback"),
+				new Uri($"{blazorBase}/signin-oidc"),
 			},
 			PostLogoutRedirectUris =
 			{
-				new Uri("https://localhost:7200/authentication/logout-callback"),
+				new Uri($"{blazorBase}/authentication/logout-callback"),
 			},
 			Permissions =
 			{
@@ -68,7 +72,7 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
 			}
 		};
 
-		var blazorClient = await manager.FindByClientIdAsync("blazor-client", cancellationToken);
+		var blazorClient = await manager.FindByClientIdAsync(blazorClientId, cancellationToken);
 		if (blazorClient is null)
 			await manager.CreateAsync(blazorDescriptor, cancellationToken);
 		else
@@ -76,12 +80,17 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider) : IHosted
 
 		// ─── Seed Machine-to-Machine (M2M) Client ──────────────────────────
 
-		if (await manager.FindByClientIdAsync("m2m-client", cancellationToken) is null)
+		var m2mClientId = configuration["OpenIddict:M2MClient:ClientId"]
+			?? throw new InvalidOperationException("OpenIddict:M2MClient:ClientId is required.");
+		var m2mSecret = configuration["OpenIddict:M2MClient:ClientSecret"]
+			?? throw new InvalidOperationException("OpenIddict:M2MClient:ClientSecret is required.");
+
+		if (await manager.FindByClientIdAsync(m2mClientId, cancellationToken) is null)
 		{
 			await manager.CreateAsync(new OpenIddictApplicationDescriptor
 			{
-				ClientId = "m2m-client",
-				ClientSecret = "m2m-super-secret-change-in-production",
+				ClientId = m2mClientId,
+				ClientSecret = m2mSecret,
 				ClientType = OpenIddictConstants.ClientTypes.Confidential,
 				DisplayName = "Machine-to-Machine Client",
 				Permissions =

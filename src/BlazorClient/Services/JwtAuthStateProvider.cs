@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.JSInterop;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -14,7 +15,7 @@ namespace PixSmith.Authorization.BlazorClient.Services;
 ///      from that snapshot, not by parsing the token, because OpenIddict issues JWE tokens
 ///      that cannot be decoded client-side.
 /// </summary>
-public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpClientFactory)
+public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpClientFactory, IConfiguration configuration)
     : AuthenticationStateProvider
 {
     private const string TokenKey    = "access_token";
@@ -52,14 +53,19 @@ public sealed class JwtAuthStateProvider(IJSRuntime js, IHttpClientFactory httpC
         var http = httpClientFactory.CreateClient("AuthAPI");
 
         // Step 1 — get the encrypted access token from the OpenIddict token endpoint.
+        var clientId = configuration["Auth:ClientId"]
+            ?? throw new InvalidOperationException("Auth:ClientId is required in appsettings.json.");
+        var scope = configuration["Auth:Scope"]
+            ?? throw new InvalidOperationException("Auth:Scope is required in appsettings.json.");
+
         using var tokenResponse = await http.PostAsync("connect/token",
             new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "password",
                 ["username"]   = email,
                 ["password"]   = password,
-                ["scope"]      = "openid profile email roles offline_access api",
-                ["client_id"]  = "blazor-client",
+                ["scope"]      = scope,
+                ["client_id"]  = clientId,
             }));
 
         if (!tokenResponse.IsSuccessStatusCode)

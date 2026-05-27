@@ -20,7 +20,7 @@ public static class InfrastructureServiceExtensions
 		// ─── EF Core ───────────────────────────────────────────────────────
 
 		var connectionString = configuration.GetConnectionString("DefaultConnection")
-			?? "Data Source=auth.db";
+			?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required.");
 
 		services.AddDbContext<ApplicationDbContext>(options =>
 		{
@@ -32,16 +32,19 @@ public static class InfrastructureServiceExtensions
 
 		// ─── ASP.NET Identity ──────────────────────────────────────────────
 
+		var pwd = configuration.GetSection("Identity:Password");
+		var lockout = configuration.GetSection("Identity:Lockout");
+
 		services.AddIdentity<IdentityUser<Guid>, IdentityRole<Guid>>(options =>
 		{
-			options.Password.RequiredLength = 8;
-			options.Password.RequireDigit = true;
-			options.Password.RequireUppercase = true;
-			options.Password.RequireNonAlphanumeric = true;
-			options.Lockout.MaxFailedAccessAttempts = 5;
-			options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-			options.User.RequireUniqueEmail = true;
-			options.SignIn.RequireConfirmedEmail = false; // set true in production
+			options.Password.RequiredLength          = pwd.GetValue<int>("RequiredLength", 8);
+			options.Password.RequireDigit            = pwd.GetValue<bool>("RequireDigit", true);
+			options.Password.RequireUppercase        = pwd.GetValue<bool>("RequireUppercase", true);
+			options.Password.RequireNonAlphanumeric  = pwd.GetValue<bool>("RequireNonAlphanumeric", true);
+			options.Lockout.MaxFailedAccessAttempts  = lockout.GetValue<int>("MaxFailedAccessAttempts", 5);
+			options.Lockout.DefaultLockoutTimeSpan   = TimeSpan.FromMinutes(lockout.GetValue<int>("DefaultLockoutTimeSpanMinutes", 15));
+			options.User.RequireUniqueEmail          = true;
+			options.SignIn.RequireConfirmedEmail      = false;
 		})
 		.AddEntityFrameworkStores<ApplicationDbContext>()
 		.AddDefaultTokenProviders();
