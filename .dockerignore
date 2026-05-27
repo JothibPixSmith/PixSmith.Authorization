@@ -1,0 +1,12 @@
+**/.vs
+**/.git
+**/.gitignore
+**/bin
+**/obj
+**/*.user
+**/*.suo
+**/node_modules
+**/.env
+**/auth.db
+**/auth.db-shm
+**/auth.db-wal

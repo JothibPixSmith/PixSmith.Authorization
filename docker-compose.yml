@@ -1,0 +1,21 @@
+services:
+  authserver:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - auth-data:/app/data
+    environment:
+      # Override the public-facing base URI used in OIDC redirect URIs.
+      # Set this to the URL users actually type in their browser.
+      - OpenIddict__BlazorClient__BaseUri=http://localhost:8080
+
+      # Override the M2M secret. Use Docker secrets or an env file in production.
+      # - OpenIddict__M2MClient__ClientSecret=your-secret-here
+
+      # Override the connection string if needed (defaults to /app/data/auth.db).
+      # - ConnectionStrings__DefaultConnection=Data Source=/app/data/auth.db
+    restart: unless-stopped
+
+volumes:
+  auth-data:

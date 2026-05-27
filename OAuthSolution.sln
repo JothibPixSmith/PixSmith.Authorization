@@ -20,8 +20,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixSmith.Authorization.Data
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixSmith.Authorization.Repositories", "PixSmith.Authorization.Repositories\PixSmith.Authorization.Repositories.csproj", "{DA345AA7-7D72-453D-9687-C524719E0B06}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AuthClient", "AuthClient", "{6205AA0B-36CD-4AD2-A696-B7F6AFAA0AE2}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

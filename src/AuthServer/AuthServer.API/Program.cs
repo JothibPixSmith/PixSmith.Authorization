@@ -18,7 +18,7 @@ builder.Host.UseSerilog();
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 
 // Controllers + Swagger
@@ -57,7 +57,11 @@ if (app.Environment.IsDevelopment())
 	app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseForwardedHeaders();
+
+if (app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseSerilogRequestLogging();

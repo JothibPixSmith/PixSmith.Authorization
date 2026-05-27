@@ -1,4 +1,6 @@
 ﻿using PixSmith.Authorization.Infrastructure.OpenIddict;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
@@ -15,8 +17,33 @@ public static class InfrastructureServiceExtensions
 {
 	public static IServiceCollection AddInfrastructure(
 		this IServiceCollection services,
-		IConfiguration configuration)
+		IConfiguration configuration,
+		IHostEnvironment environment)
 	{
+		// ─── Data Protection ──────────────────────────────────────────────
+		// Persist keys to a directory so OpenIddict signing certs survive restarts.
+		// In containers, mount this path as a volume. In dev, the default in-memory
+		// store is used unless DataProtection:KeyPath is set.
+
+		var keyPath = configuration["DataProtection:KeyPath"];
+		if (!string.IsNullOrEmpty(keyPath))
+		{
+			services.AddDataProtection()
+				.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
+		}
+
+		// ─── Forwarded Headers ─────────────────────────────────────────────
+		// Required when running behind a reverse proxy (nginx, Traefik, etc.)
+		// in a container so that the app sees the original scheme and host.
+
+		services.Configure<ForwardedHeadersOptions>(options =>
+		{
+			options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+			// Trust all proxies within a Docker network; restrict to known IPs in production.
+			options.KnownIPNetworks.Clear();
+			options.KnownProxies.Clear();
+		});
+
 		// ─── EF Core ───────────────────────────────────────────────────────
 
 		var connectionString = configuration.GetConnectionString("DefaultConnection")
@@ -81,9 +108,20 @@ public static class InfrastructureServiceExtensions
 					Scopes.Email, Scopes.Profile, Scopes.Roles,
 					Scopes.OpenId, Scopes.OfflineAccess, "api", "admin");
 
-				// Dev encryption/signing (replace with proper certs in production)
-				options.AddDevelopmentEncryptionCertificate()
-					   .AddDevelopmentSigningCertificate();
+				// Signing/encryption keys.
+				// In production, replace with X.509 certs loaded from secrets or Key Vault.
+				// Ephemeral keys are fine for single-instance containers; tokens are
+				// invalidated on restart. Dev certs persist via the data-protection store.
+				if (environment.IsDevelopment())
+				{
+					options.AddDevelopmentEncryptionCertificate()
+						   .AddDevelopmentSigningCertificate();
+				}
+				else
+				{
+					options.AddEphemeralEncryptionKey()
+						   .AddEphemeralSigningKey();
+				}
 
 				options.UseAspNetCore()
 					.EnableAuthorizationEndpointPassthrough()
