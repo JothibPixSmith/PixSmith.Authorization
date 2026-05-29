@@ -19,6 +19,7 @@ builder.Host.UseSerilog();
 // ─── Services ─────────────────────────────────────────────────────────────────
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.AddHostedService<AdminUserSeeder>(); // runs after OpenIddictSeeder (registration order)
 
 
 // Controllers + Swagger

@@ -1,0 +1,166 @@
+@page "/admin/tenants"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject ITenantApiService TenantApi
+
+<PageTitle>Tenant Management</PageTitle>
+
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-800">🏢 Tenants</h1>
+        <div class="flex gap-2">
+            <a href="/admin" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
+            <button @onclick="ShowCreateModal" class="btn-primary text-sm">+ New Tenant</button>
+        </div>
+    </div>
+
+    @if (_showCreate)
+    {
+        <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+                <h2 class="text-lg font-bold text-gray-800">@(_editing is not null ? "Edit Tenant" : "Create Tenant")</h2>
+
+                <div class="space-y-3">
+                    <InputField Label="Name" @bind-Value="_form.Name" Placeholder="My Organisation" />
+                    <InputField Label="Description" @bind-Value="_form.Description" Placeholder="Optional description" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(_formError))
+                {
+                    <p class="text-sm text-red-600">@_formError</p>
+                }
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @onclick="HideCreateModal" class="btn-secondary">Cancel</button>
+                    <button @onclick="SubmitFormAsync" class="btn-primary" disabled="@_saving">
+                        @(_saving ? "Saving..." : (_editing is not null ? "Save Changes" : "Create Tenant"))
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else if (!_tenants.Any())
+    {
+        <div class="text-center py-16 text-gray-400">
+            <p class="text-4xl mb-3">🏢</p>
+            <p class="text-lg font-medium">No tenants yet</p>
+            <p class="text-sm">Create your first tenant to get started.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @foreach (var tenant in _tenants)
+            {
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h3 class="font-semibold text-gray-800">@tenant.Name</h3>
+                            <p class="text-xs text-gray-400 font-mono mt-0.5">@tenant.Slug</p>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-xs @(tenant.IsActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")">
+                            @(tenant.IsActive ? "Active" : "Inactive")
+                        </span>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(tenant.Description))
+                    {
+                        <p class="text-sm text-gray-500">@tenant.Description</p>
+                    }
+
+                    <p class="text-xs text-gray-400">Created @tenant.CreatedAt.LocalDateTime.ToString("d MMM yyyy")</p>
+
+                    <div class="flex gap-2 pt-1">
+                        <button @onclick="() => ShowEditModal(tenant)"
+                                class="text-xs text-blue-600 hover:underline">Edit</button>
+                        <button @onclick="() => DeleteTenant(tenant.Id)"
+                                class="text-xs text-red-500 hover:underline">Delete</button>
+                        @if (tenant.IsActive)
+                        {
+                            <button @onclick="() => DeactivateTenant(tenant.Id)"
+                                    class="text-xs text-orange-500 hover:underline">Deactivate</button>
+                        }
+                        else
+                        {
+                            <button @onclick="() => ActivateTenant(tenant.Id)"
+                                    class="text-xs text-green-600 hover:underline">Activate</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<TenantModel> _tenants = [];
+    private bool _loading = true;
+    private bool _showCreate;
+    private bool _saving;
+    private string? _formError;
+    private CreateTenantFormModel _form = new();
+    private TenantModel? _editing;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _tenants = (await TenantApi.GetTenantsAsync()).ToList(); }
+        finally { _loading = false; }
+    }
+
+    private void ShowCreateModal()
+    {
+        _editing = null;
+        _form = new();
+        _formError = null;
+        _showCreate = true;
+    }
+
+    private void ShowEditModal(TenantModel tenant)
+    {
+        _editing = tenant;
+        _form = new() { Name = tenant.Name, Description = tenant.Description };
+        _formError = null;
+        _showCreate = true;
+    }
+
+    private void HideCreateModal() => _showCreate = false;
+
+    private async Task SubmitFormAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name))
+        {
+            _formError = "Name is required.";
+            return;
+        }
+
+        _saving = true;
+        _formError = null;
+        try
+        {
+            if (_editing is not null)
+                await TenantApi.UpdateTenantAsync(_editing.Id, _form);
+            else
+                await TenantApi.CreateTenantAsync(_form);
+
+            _showCreate = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteTenant(Guid id) { await TenantApi.DeleteTenantAsync(id); await LoadAsync(); }
+    private async Task ActivateTenant(Guid id) { await TenantApi.ActivateTenantAsync(id); await LoadAsync(); }
+    private async Task DeactivateTenant(Guid id) { await TenantApi.DeactivateTenantAsync(id); await LoadAsync(); }
+}

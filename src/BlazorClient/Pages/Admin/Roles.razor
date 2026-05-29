@@ -1,0 +1,211 @@
+@page "/admin/roles"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject IAdminApiService AdminApi
+
+<PageTitle>Role Management</PageTitle>
+
+<div class="space-y-4">
+
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-800">🛡️ Roles</h1>
+        <div class="flex gap-2">
+            <a href="/admin" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
+            <button @onclick="ShowCreateModal" class="btn-primary text-sm">+ New Role</button>
+        </div>
+    </div>
+
+    <!-- Create modal -->
+    @if (_showCreate)
+    {
+        <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                <h2 class="text-lg font-bold text-gray-800">Create Role</h2>
+
+                <InputField Label="Role name" @bind-Value="_newName" Placeholder="e.g. Moderator" />
+
+                @if (!string.IsNullOrEmpty(_createError))
+                {
+                    <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_createError</p>
+                }
+
+                <div class="flex justify-end gap-3 pt-1">
+                    <button @onclick="HideCreateModal" class="btn-secondary">Cancel</button>
+                    <button @onclick="CreateRoleAsync" class="btn-primary" disabled="@_saving">
+                        @(_saving ? "Creating…" : "Create")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else if (!_roles.Any())
+    {
+        <div class="text-center py-16 text-gray-400">
+            <p class="text-4xl mb-3">🛡️</p>
+            <p class="text-lg font-medium">No roles defined</p>
+            <p class="text-sm">Create your first role to get started.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            @foreach (var role in _roles)
+            {
+                var isSystem = _systemRoles.Contains(role.Name);
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
+
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-lg">@RoleIcon(role.Name)</span>
+                            <h3 class="font-semibold text-gray-800 truncate">@role.Name</h3>
+                        </div>
+                        @if (isSystem)
+                        {
+                            <span class="shrink-0 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs font-medium">
+                                System
+                            </span>
+                        }
+                    </div>
+
+                    <p class="text-xs text-gray-400 font-mono">ID: @role.Id.ToString()[..8]…</p>
+
+                    <!-- Delete area -->
+                    @if (_deleteConfirm == role.Name)
+                    {
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 space-y-2">
+                            @if (!string.IsNullOrEmpty(_deleteError))
+                            {
+                                <p class="text-xs text-red-700">@_deleteError</p>
+                            }
+                            else
+                            {
+                                <p class="text-xs text-red-700">
+                                    Delete <strong>@role.Name</strong>? Users still assigned to it cannot be removed.
+                                </p>
+                            }
+                            <div class="flex gap-2">
+                                <button @onclick="() => ConfirmDelete(role.Name)"
+                                        class="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700">
+                                    Yes, delete
+                                </button>
+                                <button @onclick="CancelDelete" class="btn-secondary text-xs">Cancel</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="pt-1">
+                            @if (isSystem)
+                            {
+                                <span class="text-xs text-gray-300 cursor-not-allowed" title="System roles cannot be deleted">
+                                    Delete
+                                </span>
+                            }
+                            else
+                            {
+                                <button @onclick="() => AskDelete(role.Name)"
+                                        class="text-xs text-red-500 hover:underline">
+                                    Delete
+                                </button>
+                            }
+                        </div>
+                    }
+
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly HashSet<string> _systemRoles = ["Admin", "User"];
+
+    private List<RoleModel> _roles = [];
+    private bool _loading = true;
+    private bool _showCreate;
+    private bool _saving;
+    private string _newName = string.Empty;
+    private string? _createError;
+    private string? _deleteConfirm;
+    private string? _deleteError;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _roles = (await AdminApi.GetRolesAsync()).OrderBy(r => r.Name).ToList(); }
+        finally { _loading = false; }
+    }
+
+    private void ShowCreateModal()
+    {
+        _newName = string.Empty;
+        _createError = null;
+        _showCreate = true;
+    }
+
+    private void HideCreateModal() => _showCreate = false;
+
+    private async Task CreateRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            _createError = "Role name is required.";
+            return;
+        }
+
+        _saving = true;
+        _createError = null;
+        try
+        {
+            await AdminApi.CreateRoleAsync(_newName.Trim());
+            _showCreate = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _createError = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+
+    private void AskDelete(string name)
+    {
+        _deleteConfirm = name;
+        _deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteConfirm = null;
+        _deleteError = null;
+    }
+
+    private async Task ConfirmDelete(string name)
+    {
+        _deleteError = null;
+        try
+        {
+            await AdminApi.DeleteRoleAsync(name);
+            _deleteConfirm = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _deleteError = ex.Message;
+        }
+    }
+
+    private static string RoleIcon(string name) => name switch
+    {
+        "Admin" => "👑",
+        "User"  => "👤",
+        _       => "🏷️",
+    };
+}

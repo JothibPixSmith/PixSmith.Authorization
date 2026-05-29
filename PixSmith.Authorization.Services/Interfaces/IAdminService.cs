@@ -16,6 +16,16 @@ public interface IAdminService
     /// <summary>Deletes the Identity user (cascade removes logins, tokens, claims).</summary>
     Task<Result> DeleteUserAsync(Guid userId, CancellationToken ct = default);
 
+    /// <summary>Admin override — updates username, email, name fields, and email confirmation state.</summary>
+    Task<Result<UserDto>> UpdateUserAsync(Guid userId, AdminUpdateUserRequest request, CancellationToken ct = default);
+
+    /// <summary>Admin override — resets password without requiring the current password.</summary>
+    Task<Result> ResetPasswordAsync(Guid userId, string newPassword, CancellationToken ct = default);
+
+    Task<Result<IReadOnlyList<ClaimDto>>> GetClaimsAsync(Guid userId, CancellationToken ct = default);
+    Task<Result> AddClaimAsync(Guid userId, string type, string value, CancellationToken ct = default);
+    Task<Result> RemoveClaimAsync(Guid userId, string type, string value, CancellationToken ct = default);
+
     Task<Result<IEnumerable<RoleDto>>> GetRolesAsync(CancellationToken ct = default);
     Task<Result<RoleDto>> CreateRoleAsync(string name, CancellationToken ct = default);
 

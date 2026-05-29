@@ -1,0 +1,433 @@
+@page "/admin/users/{Id:guid}/edit"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject IAdminApiService AdminApi
+@inject NavigationManager Nav
+
+<PageTitle>Edit User</PageTitle>
+
+@if (_loading)
+{
+    <LoadingSpinner />
+}
+else if (_user is null)
+{
+    <div class="text-center py-16 text-gray-400">
+        <p class="text-lg font-medium">User not found.</p>
+        <a href="/admin/users" class="text-sm text-blue-600 hover:underline mt-2 block">← Back to Users</a>
+    </div>
+}
+else
+{
+    <div class="max-w-2xl mx-auto space-y-6">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center
+                            text-blue-700 font-bold text-lg shrink-0">
+                    @(char.ToUpper(_user.Username[0]).ToString())
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-800">
+                        @(string.IsNullOrWhiteSpace(_user.FullName) ? _user.Username : _user.FullName)
+                    </h1>
+                    <p class="text-sm text-gray-400">@_user.Email</p>
+                </div>
+            </div>
+            <a href="/admin/users" class="text-sm text-blue-600 hover:underline">← Users</a>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="flex border-b border-gray-200 gap-1">
+            @foreach (var tab in _tabs)
+            {
+                var t = tab;
+                <button @onclick="() => SetTabAsync(t)"
+                        class="px-4 py-2 text-sm font-medium border-b-2 transition-colors
+                               @(_activeTab == t
+                                   ? "border-blue-600 text-blue-600"
+                                   : "border-transparent text-gray-500 hover:text-gray-700")">
+                    @t
+                </button>
+            }
+        </div>
+
+        <!-- ── Profile tab ──────────────────────────────────────────────── -->
+
+        @if (_activeTab == "Profile")
+        {
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+
+                <InputField Label="Username" @bind-Value="_profile.Username" Placeholder="username" />
+                <InputField Label="Email" @bind-Value="_profile.Email" Placeholder="user@example.com" />
+
+                <div class="grid grid-cols-2 gap-4">
+                    <InputField Label="First name" @bind-Value="_profile.FirstName" Placeholder="First" />
+                    <InputField Label="Last name" @bind-Value="_profile.LastName" Placeholder="Last" />
+                </div>
+
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" @bind="_profile.EmailConfirmed"
+                           class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    <span class="text-sm text-gray-700">Email confirmed</span>
+                </label>
+
+                @if (!string.IsNullOrEmpty(_profileError))
+                {
+                    <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_profileError</p>
+                }
+                @if (_profileSuccess)
+                {
+                    <p class="text-sm text-green-700 bg-green-50 px-3 py-2 rounded">Profile updated.</p>
+                }
+
+                <div class="flex justify-end pt-1">
+                    <button @onclick="SaveProfileAsync" disabled="@_profileSaving"
+                            class="btn-primary disabled:opacity-50">
+                        @(_profileSaving ? "Saving…" : "Save changes")
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- ── Roles tab ──────────────────────────────────────────────── -->
+
+        @if (_activeTab == "Roles")
+        {
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Assigned roles</p>
+
+                <div class="flex flex-wrap gap-2 min-h-[2rem]">
+                    @if (!_user.Roles.Any())
+                    {
+                        <span class="text-sm text-gray-400 italic">No roles assigned</span>
+                    }
+                    @foreach (var role in _user.Roles)
+                    {
+                        var captured = role;
+                        <span class="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium
+                                     @(captured == "Admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")">
+                            @captured
+                            <button @onclick="() => RemoveRoleAsync(captured)"
+                                    class="hover:text-red-500 leading-none"
+                                    title="Remove">×</button>
+                        </span>
+                    }
+                </div>
+
+                @if (_rolesToAdd.Any())
+                {
+                    <div class="flex gap-2 pt-1">
+                        <select @bind="_roleToAdd"
+                                class="flex-1 border border-gray-300 rounded-md text-sm px-3 py-2 bg-white">
+                            <option value="">Select role to add…</option>
+                            @foreach (var r in _rolesToAdd)
+                            {
+                                <option value="@r.Name">@r.Name</option>
+                            }
+                        </select>
+                        <button @onclick="AddRoleAsync"
+                                disabled="@string.IsNullOrEmpty(_roleToAdd)"
+                                class="btn-primary disabled:opacity-40">
+                            Add
+                        </button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_rolesError))
+                {
+                    <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_rolesError</p>
+                }
+            </div>
+        }
+
+        <!-- ── Password tab ──────────────────────────────────────────────── -->
+
+        @if (_activeTab == "Password")
+        {
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+
+                <p class="text-sm text-gray-500">
+                    Set a new password for this user. The user will not be asked for their current password.
+                </p>
+
+                <InputField Label="New password" @bind-Value="_newPassword" Placeholder="New password" InputType="password" />
+                <InputField Label="Confirm password" @bind-Value="_confirmPassword" Placeholder="Confirm password" InputType="password" />
+
+                @if (!string.IsNullOrEmpty(_passwordError))
+                {
+                    <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_passwordError</p>
+                }
+                @if (_passwordSuccess)
+                {
+                    <p class="text-sm text-green-700 bg-green-50 px-3 py-2 rounded">Password updated.</p>
+                }
+
+                <div class="flex justify-end pt-1">
+                    <button @onclick="ResetPasswordAsync" disabled="@_passwordSaving"
+                            class="btn-primary disabled:opacity-50">
+                        @(_passwordSaving ? "Saving…" : "Reset password")
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- ── Claims tab ──────────────────────────────────────────────── -->
+
+        @if (_activeTab == "Claims")
+        {
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+
+                <!-- Existing claims -->
+                @if (_claimsLoading)
+                {
+                    <LoadingSpinner />
+                }
+                else if (!_claims.Any())
+                {
+                    <p class="text-sm text-gray-400 italic">No custom claims on this user.</p>
+                }
+                else
+                {
+                    <div class="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+                        @foreach (var claim in _claims)
+                        {
+                            var c = claim;
+                            <div class="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50">
+                                <div class="min-w-0">
+                                    <span class="text-xs font-mono text-gray-500">@c.Type</span>
+                                    <span class="mx-2 text-gray-300">·</span>
+                                    <span class="text-sm text-gray-800">@c.Value</span>
+                                </div>
+                                <button @onclick="() => RemoveClaimAsync(c)"
+                                        class="text-xs text-red-500 hover:text-red-700 hover:underline ml-4 shrink-0">
+                                    Remove
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Add claim form -->
+                <div class="border-t border-gray-100 pt-4 space-y-3">
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Add claim</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <InputField Label="Type" @bind-Value="_claimType" Placeholder="e.g. tenant_id" />
+                        <InputField Label="Value" @bind-Value="_claimValue" Placeholder="e.g. acme-corp" />
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_claimsError))
+                    {
+                        <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_claimsError</p>
+                    }
+
+                    <div class="flex justify-end">
+                        <button @onclick="AddClaimAsync"
+                                disabled="@(string.IsNullOrWhiteSpace(_claimType) || string.IsNullOrWhiteSpace(_claimValue))"
+                                class="btn-primary disabled:opacity-40">
+                            Add claim
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private static readonly string[] _tabs = ["Profile", "Roles", "Password", "Claims"];
+
+    private UserModel? _user;
+    private bool _loading = true;
+    private string _activeTab = "Profile";
+
+    // ── All roles for the role picker ──────────────────────────────────────
+    private List<RoleModel> _allRoles = [];
+    private List<RoleModel> _rolesToAdd => _user is null
+        ? []
+        : _allRoles.Where(r => !_user.Roles.Contains(r.Name)).ToList();
+    private string _roleToAdd = string.Empty;
+    private string? _rolesError;
+
+    // ── Profile form ───────────────────────────────────────────────────────
+    private AdminUpdateUserFormModel _profile = new();
+    private bool _profileSaving;
+    private bool _profileSuccess;
+    private string? _profileError;
+
+    // ── Password form ──────────────────────────────────────────────────────
+    private string _newPassword = string.Empty;
+    private string _confirmPassword = string.Empty;
+    private bool _passwordSaving;
+    private bool _passwordSuccess;
+    private string? _passwordError;
+
+    // ── Claims ─────────────────────────────────────────────────────────────
+    private List<ClaimModel> _claims = [];
+    private bool _claimsLoading;
+    private string _claimType = string.Empty;
+    private string _claimValue = string.Empty;
+    private string? _claimsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadUserAsync(), LoadRolesAsync());
+        _loading = false;
+    }
+
+    private async Task LoadUserAsync()
+    {
+        var result = await AdminApi.GetUsersAsync(1, int.MaxValue);
+        _user = result.Items.FirstOrDefault(u => u.Id == Id);
+        if (_user is not null) SyncProfileForm();
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        _allRoles = (await AdminApi.GetRolesAsync()).ToList();
+    }
+
+    private async Task LoadClaimsAsync()
+    {
+        _claimsLoading = true;
+        try { _claims = await AdminApi.GetClaimsAsync(Id); }
+        finally { _claimsLoading = false; }
+    }
+
+    private void SyncProfileForm()
+    {
+        if (_user is null) return;
+        _profile.Username = _user.Username;
+        _profile.Email = _user.Email;
+        _profile.FirstName = _user.FirstName;
+        _profile.LastName = _user.LastName;
+        _profile.EmailConfirmed = _user.EmailConfirmed;
+    }
+
+    // Switch tab — lazy-load claims when first visiting that tab
+    private async Task SetTabAsync(string tab)
+    {
+        _activeTab = tab;
+        if (tab == "Claims" && !_claims.Any() && !_claimsLoading)
+            await LoadClaimsAsync();
+    }
+
+    // ── Profile ────────────────────────────────────────────────────────────
+
+    private async Task SaveProfileAsync()
+    {
+        _profileError = null;
+        _profileSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(_profile.Username) || string.IsNullOrWhiteSpace(_profile.Email))
+        {
+            _profileError = "Username and email are required.";
+            return;
+        }
+
+        _profileSaving = true;
+        try
+        {
+            _user = await AdminApi.UpdateUserAsync(Id, _profile);
+            _profileSuccess = true;
+        }
+        catch (Exception ex) { _profileError = ex.Message; }
+        finally { _profileSaving = false; }
+    }
+
+    // ── Roles ──────────────────────────────────────────────────────────────
+
+    private async Task AddRoleAsync()
+    {
+        if (string.IsNullOrEmpty(_roleToAdd)) return;
+        _rolesError = null;
+        try
+        {
+            await AdminApi.AssignRoleAsync(Id, _roleToAdd);
+            _roleToAdd = string.Empty;
+            await ReloadUserAsync();
+        }
+        catch (Exception ex) { _rolesError = ex.Message; }
+    }
+
+    private async Task RemoveRoleAsync(string role)
+    {
+        _rolesError = null;
+        try
+        {
+            await AdminApi.RemoveRoleAsync(Id, role);
+            await ReloadUserAsync();
+        }
+        catch (Exception ex) { _rolesError = ex.Message; }
+    }
+
+    // ── Password ───────────────────────────────────────────────────────────
+
+    private async Task ResetPasswordAsync()
+    {
+        _passwordError = null;
+        _passwordSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(_newPassword))
+        {
+            _passwordError = "Password is required.";
+            return;
+        }
+        if (_newPassword != _confirmPassword)
+        {
+            _passwordError = "Passwords do not match.";
+            return;
+        }
+
+        _passwordSaving = true;
+        try
+        {
+            await AdminApi.ResetPasswordAsync(Id, _newPassword);
+            _newPassword = string.Empty;
+            _confirmPassword = string.Empty;
+            _passwordSuccess = true;
+        }
+        catch (Exception ex) { _passwordError = ex.Message; }
+        finally { _passwordSaving = false; }
+    }
+
+    // ── Claims ─────────────────────────────────────────────────────────────
+
+    private async Task AddClaimAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_claimType) || string.IsNullOrWhiteSpace(_claimValue)) return;
+        _claimsError = null;
+        try
+        {
+            await AdminApi.AddClaimAsync(Id, _claimType.Trim(), _claimValue.Trim());
+            _claimType = string.Empty;
+            _claimValue = string.Empty;
+            await LoadClaimsAsync();
+        }
+        catch (Exception ex) { _claimsError = ex.Message; }
+    }
+
+    private async Task RemoveClaimAsync(ClaimModel claim)
+    {
+        _claimsError = null;
+        try
+        {
+            await AdminApi.RemoveClaimAsync(Id, claim.Type, claim.Value);
+            await LoadClaimsAsync();
+        }
+        catch (Exception ex) { _claimsError = ex.Message; }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private async Task ReloadUserAsync()
+    {
+        var result = await AdminApi.GetUsersAsync(1, int.MaxValue);
+        _user = result.Items.FirstOrDefault(u => u.Id == Id) ?? _user;
+    }
+}

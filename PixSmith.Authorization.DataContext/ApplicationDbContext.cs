@@ -15,6 +15,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<OAuthClientRegistration> OAuthClientRegistrations => Set<OAuthClientRegistration>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<TenantRecord> Tenants => Set<TenantRecord>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -54,6 +55,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.Property(x => x.Action).HasMaxLength(200).IsRequired();
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.OccurredAt);
+        });
+
+        builder.Entity<TenantRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Slug).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.HasIndex(x => x.Slug).IsUnique();
         });
 
         // Apply OpenIddict entity configurations
@@ -108,4 +118,14 @@ public class AuditLog
     public string? Details { get; set; }
     public string? IpAddress { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
+}
+
+public class TenantRecord
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
 }

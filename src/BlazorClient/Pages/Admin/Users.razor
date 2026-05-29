@@ -6,9 +6,23 @@
 <PageTitle>User Management</PageTitle>
 
 <div class="space-y-4">
+
     <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-gray-800">👥 User Management</h1>
-        <a href="/admin" class="text-sm text-blue-600 hover:underline">← Back to Dashboard</a>
+        <h1 class="text-2xl font-bold text-gray-800">👥 Users</h1>
+        <a href="/admin" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
+    </div>
+
+    <!-- Search -->
+    <div class="flex items-center gap-4">
+        <input @bind="_search" @bind:event="oninput" type="search"
+               placeholder="Search by name or email…"
+               class="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+        @if (_users is not null)
+        {
+            <span class="text-sm text-gray-400 whitespace-nowrap">
+                @_filtered.Count of @_users.TotalCount users
+            </span>
+        }
     </div>
 
     @if (_loading)
@@ -18,89 +32,111 @@
     else if (_users is not null)
     {
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                <span class="text-sm text-gray-500">@_users.TotalCount users total</span>
+
+            <!-- Pagination bar -->
+            <div class="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+                <span class="text-xs text-gray-400">Page @_page of @_users.TotalPages</span>
                 <div class="flex gap-2">
                     <button @onclick="() => ChangePage(_page - 1)" disabled="@(_page <= 1)"
                             class="btn-secondary text-xs disabled:opacity-40">← Prev</button>
-                    <span class="text-sm text-gray-500">Page @_page / @_users.TotalPages</span>
                     <button @onclick="() => ChangePage(_page + 1)" disabled="@(_page >= _users.TotalPages)"
                             class="btn-secondary text-xs disabled:opacity-40">Next →</button>
                 </div>
             </div>
+
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-100">
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Roles</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last login</th>
                             <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-100">
-                        @foreach (var user in _users.Items)
+                    <tbody class="divide-y divide-gray-50">
+                        @foreach (var user in _filtered)
                         {
-                            <tr class="hover:bg-gray-50">
+                            <tr class="hover:bg-gray-50 cursor-pointer" @onclick="() => OpenPanel(user)">
+
+                                <!-- Avatar + name -->
                                 <td class="px-4 py-3">
                                     <div class="flex items-center gap-3">
-                                        <div class="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                                            @user.Username[0].ToString().ToUpper()
+                                        <div class="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center
+                                                    text-blue-700 font-bold text-sm shrink-0">
+                                            @(char.ToUpper(user.Username[0]).ToString())
                                         </div>
                                         <div>
-                                            <div class="text-sm font-medium text-gray-900">@user.FullName</div>
+                                            <div class="text-sm font-medium text-gray-900">
+                                                @(string.IsNullOrWhiteSpace(user.FullName) ? user.Username : user.FullName)
+                                            </div>
                                             <div class="text-xs text-gray-400">@user.Email</div>
                                         </div>
                                     </div>
                                 </td>
+
+                                <!-- Roles -->
                                 <td class="px-4 py-3">
                                     <div class="flex flex-wrap gap-1">
                                         @foreach (var role in user.Roles)
                                         {
-                                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">@role</span>
+                                            <span class="px-2 py-0.5 rounded text-xs
+                                                         @(role == "Admin" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600")">
+                                                @role
+                                            </span>
                                         }
                                     </div>
                                 </td>
+
+                                <!-- Status badge -->
                                 <td class="px-4 py-3">
                                     @if (user.IsLocked)
                                     {
-                                        <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">🔒 Locked</span>
+                                        <span class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">Locked</span>
                                     }
                                     else if (!user.IsActive)
                                     {
-                                        <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">Inactive</span>
+                                        <span class="px-2 py-1 bg-gray-100 text-gray-500 rounded-full text-xs">Inactive</span>
                                     }
                                     else
                                     {
-                                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">✓ Active</span>
+                                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">Active</span>
                                     }
                                 </td>
-                                <td class="px-4 py-3 text-xs text-gray-400">@user.CreatedAt.ToString("MMM d, yyyy")</td>
-                                <td class="px-4 py-3 text-right">
-                                    <div class="flex justify-end gap-2">
+
+                                <!-- Last login -->
+                                <td class="px-4 py-3 text-xs text-gray-400">
+                                    @(user.LastLoginAt.HasValue
+                                        ? user.LastLoginAt.Value.LocalDateTime.ToString("MMM d, yyyy HH:mm")
+                                        : "Never")
+                                </td>
+
+                                <!-- Quick actions — stopPropagation so row click doesn't also fire -->
+                                <td class="px-4 py-3 text-right" @onclick:stopPropagation>
+                                    <div class="flex justify-end items-center gap-3">
                                         @if (user.IsLocked)
                                         {
-                                            <button @onclick="() => UnlockUser(user.Id)"
+                                            <button @onclick="() => QuickUnlock(user.Id)"
                                                     class="text-xs text-green-600 hover:underline">Unlock</button>
                                         }
-                                        @if (!user.IsActive)
+                                        @if (user.IsActive)
                                         {
-                                            <button @onclick="() => ActivateUser(user.Id)"
-                                                    class="text-xs text-blue-600 hover:underline">Activate</button>
+                                            <button @onclick="() => QuickDeactivate(user.Id)"
+                                                    class="text-xs text-orange-500 hover:underline">Deactivate</button>
                                         }
                                         else
                                         {
-                                            <button @onclick="() => DeactivateUser(user.Id)"
-                                                    class="text-xs text-orange-600 hover:underline">Deactivate</button>
+                                            <button @onclick="() => QuickActivate(user.Id)"
+                                                    class="text-xs text-blue-600 hover:underline">Activate</button>
                                         }
-                                        @if (!user.Roles.Contains("Admin"))
-                                        {
-                                            <button @onclick="() => PromoteToAdmin(user.Id)"
-                                                    class="text-xs text-purple-600 hover:underline">Make Admin</button>
-                                        }
+                                        <button @onclick="() => OpenPanel(user)"
+                                                class="text-xs text-gray-500 hover:text-gray-800 font-medium">
+                                            Manage →
+                                        </button>
                                     </div>
                                 </td>
+
                             </tr>
                         }
                     </tbody>
@@ -110,13 +146,225 @@
     }
 </div>
 
+<!-- ── Slide-over panel ─────────────────────────────────────────────────── -->
+
+@if (_selected is not null)
+{
+    <!-- Backdrop -->
+    <div class="fixed inset-0 bg-black/30 z-40" @onclick="ClosePanel"></div>
+
+    <!-- Panel -->
+    <div class="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col">
+
+        <!-- Panel header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+            <h2 class="text-lg font-semibold text-gray-800">Manage User</h2>
+            <div class="flex items-center gap-3">
+                <a href="/admin/users/@_selected.Id/edit"
+                   class="text-sm text-blue-600 hover:underline font-medium">
+                    Edit →
+                </a>
+                <button @onclick="ClosePanel" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto divide-y divide-gray-100">
+
+            <!-- Profile section -->
+            <div class="px-6 py-5">
+                <div class="flex items-center gap-4">
+                    <div class="h-14 w-14 rounded-full bg-blue-100 flex items-center justify-center
+                                text-blue-700 font-bold text-2xl shrink-0">
+                        @(char.ToUpper(_selected.Username[0]).ToString())
+                    </div>
+                    <div class="min-w-0">
+                        <p class="font-semibold text-gray-900 truncate">
+                            @(string.IsNullOrWhiteSpace(_selected.FullName) ? _selected.Username : _selected.FullName)
+                        </p>
+                        <p class="text-sm text-gray-500 truncate">@_selected.Email</p>
+                        <p class="text-xs text-gray-400 mt-0.5">@@_selected.Username</p>
+                    </div>
+                </div>
+
+                <!-- Stats grid -->
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs text-gray-400">Joined</p>
+                        <p class="text-sm font-medium text-gray-700 mt-0.5">
+                            @_selected.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")
+                        </p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs text-gray-400">Last login</p>
+                        <p class="text-sm font-medium text-gray-700 mt-0.5">
+                            @(_selected.LastLoginAt.HasValue
+                                ? _selected.LastLoginAt.Value.LocalDateTime.ToString("MMM d, yyyy")
+                                : "Never")
+                        </p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs text-gray-400">Email verified</p>
+                        <p class="text-sm font-medium mt-0.5 @(_selected.EmailConfirmed ? "text-green-600" : "text-gray-400")">
+                            @(_selected.EmailConfirmed ? "Yes" : "No")
+                        </p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs text-gray-400">2FA enabled</p>
+                        <p class="text-sm font-medium mt-0.5 @(_selected.TwoFactorEnabled ? "text-green-600" : "text-gray-400")">
+                            @(_selected.TwoFactorEnabled ? "Yes" : "No")
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Account status -->
+            <div class="px-6 py-4">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Account Status</p>
+                <div class="flex flex-wrap gap-2">
+                    @if (_selected.IsLocked)
+                    {
+                        <span class="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                            Locked
+                        </span>
+                        <button @onclick="PanelUnlock"
+                                class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs hover:bg-green-200">
+                            Unlock Account
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
+                            Not locked
+                        </span>
+                    }
+
+                    @if (_selected.IsActive)
+                    {
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                            Active
+                        </span>
+                        <button @onclick="PanelDeactivate"
+                                class="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs hover:bg-gray-200">
+                            Deactivate
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">
+                            Inactive
+                        </span>
+                        <button @onclick="PanelActivate"
+                                class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs hover:bg-blue-200">
+                            Activate
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- Roles -->
+            <div class="px-6 py-4">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Roles</p>
+
+                <div class="flex flex-wrap gap-2 mb-3 min-h-[2rem]">
+                    @if (!_selected.Roles.Any())
+                    {
+                        <span class="text-xs text-gray-400 italic">No roles assigned</span>
+                    }
+                    @foreach (var role in _selected.Roles)
+                    {
+                        var captured = role;
+                        <span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
+                                     @(captured == "Admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")">
+                            @captured
+                            <button @onclick="() => RemoveRole(captured)"
+                                    class="hover:text-red-500 text-sm leading-none -mr-0.5"
+                                    title="Remove role">×</button>
+                        </span>
+                    }
+                </div>
+
+                @if (_rolesToAdd.Any())
+                {
+                    <div class="flex gap-2 mt-2">
+                        <select @bind="_roleToAdd"
+                                class="flex-1 border border-gray-300 rounded-md text-sm px-3 py-1.5 bg-white">
+                            <option value="">Select a role to add…</option>
+                            @foreach (var r in _rolesToAdd)
+                            {
+                                <option value="@r.Name">@r.Name</option>
+                            }
+                        </select>
+                        <button @onclick="AddRole"
+                                disabled="@string.IsNullOrEmpty(_roleToAdd)"
+                                class="btn-primary text-sm disabled:opacity-40">
+                            Add
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <!-- Danger zone -->
+            <div class="px-6 py-4">
+                <p class="text-xs font-semibold text-red-400 uppercase tracking-wide mb-3">Danger Zone</p>
+                @if (_confirmDelete)
+                {
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+                        <p class="text-sm text-red-700">
+                            Permanently delete <strong>@_selected.Email</strong>? This cannot be undone.
+                        </p>
+                        <div class="flex gap-2">
+                            <button @onclick="DeleteUser"
+                                    class="px-3 py-1.5 bg-red-600 text-white rounded-md text-sm hover:bg-red-700">
+                                Yes, delete user
+                            </button>
+                            <button @onclick="() => _confirmDelete = false"
+                                    class="btn-secondary text-sm">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button @onclick="() => _confirmDelete = true"
+                            class="text-sm text-red-500 hover:text-red-700 hover:underline">
+                        Delete this user…
+                    </button>
+                }
+            </div>
+
+        </div>
+    </div>
+}
+
 @code {
     private UserPagedResultModel? _users;
     private bool _loading = true;
     private int _page = 1;
     private const int PageSize = 20;
 
-    protected override async Task OnInitializedAsync() => await LoadUsersAsync();
+    private string _search = string.Empty;
+    private List<UserModel> _filtered => _users?.Items
+        .Where(u =>
+            string.IsNullOrEmpty(_search) ||
+            u.Username.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            u.Email.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+            u.FullName.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .ToList() ?? [];
+
+    private UserModel? _selected;
+    private bool _confirmDelete;
+    private string _roleToAdd = string.Empty;
+    private List<RoleModel> _allRoles = [];
+
+    private List<RoleModel> _rolesToAdd => _selected is null
+        ? []
+        : _allRoles.Where(r => !_selected.Roles.Contains(r.Name)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadUsersAsync(), LoadRolesAsync());
+    }
 
     private async Task LoadUsersAsync()
     {
@@ -125,14 +373,104 @@
         finally { _loading = false; }
     }
 
-    private async Task ChangePage(int page) { _page = page; await LoadUsersAsync(); }
-
-    private async Task UnlockUser(Guid id) { await AdminApi.UnlockUserAsync(id); await LoadUsersAsync(); }
-    private async Task ActivateUser(Guid id) { await AdminApi.ActivateUserAsync(id); await LoadUsersAsync(); }
-    private async Task DeactivateUser(Guid id) { await AdminApi.DeactivateUserAsync(id); await LoadUsersAsync(); }
-    private async Task PromoteToAdmin(Guid id)
+    private async Task LoadRolesAsync()
     {
-        await AdminApi.AssignRoleAsync(id, "Admin");
+        _allRoles = (await AdminApi.GetRolesAsync()).ToList();
+    }
+
+    private async Task ChangePage(int page)
+    {
+        _page = page;
         await LoadUsersAsync();
+    }
+
+    // ── Panel open / close ────────────────────────────────────────────────────
+
+    private void OpenPanel(UserModel user)
+    {
+        _selected = user;
+        _confirmDelete = false;
+        _roleToAdd = string.Empty;
+    }
+
+    private void ClosePanel()
+    {
+        _selected = null;
+        _confirmDelete = false;
+    }
+
+    // ── Table quick-actions ───────────────────────────────────────────────────
+
+    private async Task QuickUnlock(Guid id)
+    {
+        await AdminApi.UnlockUserAsync(id);
+        await ReloadAndSync(id);
+    }
+
+    private async Task QuickActivate(Guid id)
+    {
+        await AdminApi.ActivateUserAsync(id);
+        await ReloadAndSync(id);
+    }
+
+    private async Task QuickDeactivate(Guid id)
+    {
+        await AdminApi.DeactivateUserAsync(id);
+        await ReloadAndSync(id);
+    }
+
+    // ── Panel actions ─────────────────────────────────────────────────────────
+
+    private async Task PanelUnlock()
+    {
+        if (_selected is null) return;
+        await AdminApi.UnlockUserAsync(_selected.Id);
+        await ReloadAndSync(_selected.Id);
+    }
+
+    private async Task PanelActivate()
+    {
+        if (_selected is null) return;
+        await AdminApi.ActivateUserAsync(_selected.Id);
+        await ReloadAndSync(_selected.Id);
+    }
+
+    private async Task PanelDeactivate()
+    {
+        if (_selected is null) return;
+        await AdminApi.DeactivateUserAsync(_selected.Id);
+        await ReloadAndSync(_selected.Id);
+    }
+
+    private async Task AddRole()
+    {
+        if (_selected is null || string.IsNullOrEmpty(_roleToAdd)) return;
+        await AdminApi.AssignRoleAsync(_selected.Id, _roleToAdd);
+        _roleToAdd = string.Empty;
+        await ReloadAndSync(_selected.Id);
+    }
+
+    private async Task RemoveRole(string role)
+    {
+        if (_selected is null) return;
+        await AdminApi.RemoveRoleAsync(_selected.Id, role);
+        await ReloadAndSync(_selected.Id);
+    }
+
+    private async Task DeleteUser()
+    {
+        if (_selected is null) return;
+        await AdminApi.DeleteUserAsync(_selected.Id);
+        ClosePanel();
+        await LoadUsersAsync();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task ReloadAndSync(Guid userId)
+    {
+        await LoadUsersAsync();
+        if (_selected?.Id == userId)
+            _selected = _users?.Items.FirstOrDefault(u => u.Id == userId) ?? _selected;
     }
 }

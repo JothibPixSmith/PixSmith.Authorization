@@ -1,282 +1,256 @@
-# 🔐 AuthServer — OAuth 2.0 / OIDC Platform
+# PixSmith Authorization Server
 
-A **production-grade** Authorization Server built with **.NET 10**, **Blazor WASM**, and **OpenIddict**, following **Onion Architecture** principles.
-
----
-
-## 📐 Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Blazor WASM Client                   │
-│  (SPA — public OIDC client, PKCE, SSO buttons, Admin UI)   │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ HTTPS / OIDC
-┌───────────────────────▼─────────────────────────────────────┐
-│                     AuthServer.API                          │
-│  Controllers: /connect/*, /api/account, /api/admin          │
-│  • OpenIddict protocol endpoints                            │
-│  • External SSO (Google, Microsoft)                         │
-│  • ASP.NET Identity sign-in                                 │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ (depends on)
-┌───────────────────────▼─────────────────────────────────────┐
-│                  AuthServer.Application                     │
-│  • IUserService / IOAuthClientService                       │
-│  • DTOs, Result<T> monad                                    │
-│  • Business logic (pure, framework-free)                    │
-└───────────────────────┬─────────────────────────────────────┘
-           ┌────────────┤ (depends on)
-           │            │
-┌──────────▼──────┐  ┌──▼──────────────────────────────────┐
-│ AuthServer      │  │      AuthServer.Infrastructure       │
-│ .Domain         │  │  • EF Core + SQLite (swap-able)      │
-│                 │  │  • OpenIddict EF Core store          │
-│ • Entities      │  │  • ASP.NET Identity integration      │
-│ • Value Objects │  │  • IPasswordHasher impl              │
-│ • Interfaces    │  │  • OpenIddictSeeder (hosted service) │
-│ • Domain Events │  │  • External SSO provider setup       │
-│ • Enums         │  └──────────────────────────────────────┘
-│                 │
-│ ⚠️ NO external  │
-│ dependencies    │
-└─────────────────┘
-```
-
-### Onion Architecture Dependency Rule
-> Dependencies always point **inward**. Domain knows nothing about Infrastructure.
-
-| Layer | Depends On | NuGet Packages |
-|---|---|---|
-| **Domain** | *(nothing)* | None |
-| **Application** | Domain | FluentValidation |
-| **Infrastructure** | Domain + Application | EF Core, OpenIddict, Identity |
-| **API** | Application + Infrastructure | ASP.NET Core, Swagger, Serilog |
-| **Blazor Client** | *(standalone)* | WebAssembly.Authentication |
+An OAuth 2.0 / OIDC authorization server built with **.NET 10**, **OpenIddict**, **ASP.NET Identity**, and a **Blazor WASM** admin UI. The Blazor client is hosted by the API — a single process, single port.
 
 ---
 
-## 🚀 Getting Started
+## Prerequisites
 
-### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- An IDE (Visual Studio 2022+, Rider, or VS Code)
-
-### 1. Clone & Build
-
-```bash
-git clone <repo-url>
-cd OAuthSolution
-dotnet restore
-dotnet build
-```
-
-### 2. Configure Secrets (development)
-
-```bash
-cd src/AuthServer/AuthServer.API
-
-# Store provider secrets (never commit these!)
-dotnet user-secrets set "Authentication:Google:ClientId" "YOUR_GOOGLE_CLIENT_ID"
-dotnet user-secrets set "Authentication:Google:ClientSecret" "YOUR_GOOGLE_CLIENT_SECRET"
-dotnet user-secrets set "Authentication:Microsoft:ClientId" "YOUR_MS_CLIENT_ID"
-dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "YOUR_MS_CLIENT_SECRET"
-```
-
-### 3. Run the Auth Server
-
-```bash
-cd src/AuthServer/AuthServer.API
-dotnet run
-# Listening on https://localhost:7100
-# Swagger UI: https://localhost:7100/swagger
-```
-
-### 4. Run the Blazor Client
-
-```bash
-cd src/BlazorClient
-dotnet run
-# Listening on https://localhost:7200
-```
-
-### 5. Create Your First Admin User
-
-After starting the API, use the Swagger UI or curl:
-
-```bash
-# Register
-curl -X POST https://localhost:7100/api/account/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"Admin@1234","confirmPassword":"Admin@1234","firstName":"Admin","lastName":"User"}'
-
-# Promote to Admin (requires being authenticated as Admin first — seed one via DB or API)
-curl -X POST https://localhost:7100/api/admin/users/{USER_ID}/roles \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"roleName":"Admin"}'
-```
+- PowerShell 5.1 or later (built into Windows; available on Linux/macOS via `pwsh`)
 
 ---
 
-## 🔑 OAuth 2.0 Flows Supported
+## First-Time Setup
 
-| Flow | Use Case | Pre-seeded Client |
+A setup script handles all configuration, secrets, and the initial admin account in one step.
+
+### 1. Copy the example config (optional)
+
+```powershell
+Copy-Item setup.example.json setup.json
+# Edit setup.json and fill in your values
+```
+
+`setup.json` is gitignored. `setup.example.json` is safe to commit — it contains only placeholder values.
+
+### 2. Run the setup script
+
+**Interactive (prompts for every value):**
+
+```powershell
+.\Setup-Application.ps1
+```
+
+**From a pre-filled config file:**
+
+```powershell
+.\Setup-Application.ps1 -ConfigFile .\setup.json
+```
+
+**Production target:**
+
+```powershell
+.\Setup-Application.ps1 -ConfigFile .\setup.json -Environment Production
+```
+
+The script will:
+
+| Step | What happens |
+|---|---|
+| Prerequisites | Verifies .NET SDK and solution structure |
+| Application URL | Sets the base URI used by the OIDC client and token issuer |
+| Database | Configures the connection string (SQLite by default) |
+| OIDC Client IDs | Sets the Blazor and M2M client identifiers |
+| M2M Client Secret | Auto-generates a secret or accepts a custom one |
+| Initial Admin Account | Collects email, username, and password (validated against the Identity policy) |
+| External OAuth Providers | Optional Google / Microsoft credentials |
+| Configuration write | Writes non-sensitive settings to `appsettings.{Environment}.json` |
+| Secrets | **Development:** `dotnet user-secrets` — **Production:** `.env.production` (gitignored) |
+| `.gitignore` | Adds `setup.json`, `.env.production`, `.env.*` if not already present |
+
+### 3. Start the application
+
+```powershell
+dotnet run --project src/AuthServer/AuthServer.API
+```
+
+On first startup the application:
+
+1. Applies EF Core migrations (creates the database if it does not exist)
+2. Seeds the "Admin" and "User" Identity roles
+3. Seeds the two default OpenIddict clients (`blazor-client`, `m2m-client`)
+4. Creates the initial admin user from the `AdminSeed:*` configuration values
+5. Serves the Blazor WASM client at the same origin
+
+Open the URL printed in the terminal (default `https://localhost:7100`) and sign in with the admin account you configured.
+
+> After the first successful login, go to **Profile** and change the admin password. For production, remove the `AdminSeed:*` values from `.env.production` after first boot — the seeder is a no-op once the user exists.
+
+---
+
+## setup.json Reference
+
+```json
+{
+  "Environment":        "Development",
+  "BaseUri":            "https://localhost:7100",
+  "ConnectionString":   "Data Source=auth.db",
+  "DataProtectionPath": "",
+  "BlazorClientId":     "blazor-client",
+  "M2MClientId":        "m2m-client",
+  "M2MClientSecret":    "replace-with-a-strong-secret",
+  "AdminEmail":         "admin@yourcompany.com",
+  "AdminUsername":      "admin",
+  "AdminPassword":      "Replace@Me1!",
+  "GoogleClientId":     "",
+  "GoogleClientSecret": "",
+  "MicrosoftClientId":  "",
+  "MicrosoftClientSecret": ""
+}
+```
+
+Any field left blank or omitted causes the script to prompt interactively for that value.
+
+---
+
+## Running in Docker
+
+The project includes a `Dockerfile` (multi-stage, Linux) and a `docker-compose.yml`.
+
+```powershell
+# Build and start
+docker compose up --build
+
+# Or pull and start a pre-built image
+docker compose up
+```
+
+The container listens on port **8080** (HTTP). For HTTPS in development, Visual Studio's Docker profile mounts the dev certificate automatically.
+
+### Environment variables for containers
+
+Copy `.env.production` (generated by the setup script) to your deployment host and load it:
+
+```yaml
+# docker-compose.yml — production override
+services:
+  authserver:
+    env_file:
+      - .env.production
+```
+
+Key variables:
+
+| Variable | Purpose |
+|---|---|
+| `OpenIddict__BlazorClient__BaseUri` | Public URL the OIDC client redirects to |
+| `OpenIddict__M2MClient__ClientSecret` | M2M client secret (rotate before production) |
+| `AdminSeed__Email` | Initial admin email (remove after first boot) |
+| `AdminSeed__Username` | Initial admin username (remove after first boot) |
+| `AdminSeed__Password` | Initial admin password (remove after first boot) |
+| `Authentication__Google__ClientId` | Google OAuth client ID |
+| `Authentication__Google__ClientSecret` | Google OAuth client secret |
+| `ConnectionStrings__DefaultConnection` | Database connection string override |
+
+---
+
+## Configuration Files
+
+| File | Purpose | In source control |
 |---|---|---|
-| **Authorization Code + PKCE** | Blazor WASM, SPAs, Mobile | `blazor-client` (public) |
-| **Client Credentials** | Machine-to-Machine (M2M) | `m2m-client` (confidential) |
-| **Refresh Token** | Long-lived sessions | Included in above |
+| `appsettings.json` | Baseline defaults (non-sensitive) | Yes |
+| `appsettings.Development.json` | Dev overrides written by setup script | Yes |
+| `appsettings.Production.json` | Production overrides written by setup script | Yes |
+| `dotnet user-secrets` | Sensitive values in Development | No (per-machine) |
+| `.env.production` | Sensitive values for Production | No (gitignored) |
+| `setup.json` | Your local settings file for the setup script | No (gitignored) |
+| `setup.example.json` | Template for `setup.json` | Yes |
 
-### Well-Known Endpoints
+---
+
+## Admin UI
+
+The Blazor WASM client at `/admin` (requires the **Admin** role) provides:
+
+| Page | Route | Description |
+|---|---|---|
+| Dashboard | `/admin` | User counts, client stats, recent sign-ins |
+| Users | `/admin/users` | Paginated list — lock, unlock, activate, deactivate, assign roles |
+| Tenants | `/admin/tenants` | Create and manage tenants (name, slug, description, active state) |
+| OIDC Apps | `/admin/oidc-apps` | Manage OpenIddict application registrations directly |
+| OAuth Clients | `/admin/clients` | Manage the custom OAuth client registry |
+
+---
+
+## OIDC Endpoints
 
 | Endpoint | URL |
 |---|---|
 | Authorization | `GET  /connect/authorize` |
 | Token | `POST /connect/token` |
 | UserInfo | `GET  /connect/userinfo` |
-| Logout | `GET  /connect/logout` |
+| End-session | `GET  /connect/logout` |
+| Introspection | `POST /connect/introspect` |
+| Revocation | `POST /connect/revoke` |
 | JWKS | `GET  /.well-known/jwks` |
 | Discovery | `GET  /.well-known/openid-configuration` |
 
 ---
 
-## 🔒 SSO Providers
+## Pre-seeded Clients
 
-The API supports three external providers out of the box:
-
-| Provider | Login URL | Callback |
-|---|---|---|
-| Google | `/api/account/external-login?provider=Google` | `/signin-google` |
-| Microsoft | `/api/account/external-login?provider=Microsoft` | `/signin-microsoft` |
-
-**How SSO works in this app:**
-1. User clicks "Sign in with Google" in the Blazor UI
-2. Redirected to `/api/account/external-login?provider=Google`
-3. API redirects to Google OAuth
-4. Google redirects back to `/api/account/external-login-callback`
-5. `UserService.FindOrCreateFromExternalLoginAsync` finds or creates a domain user
-6. ASP.NET Identity links the external login
-7. User is signed in and redirected to the return URL
+| Client ID | Type | Flows | Purpose |
+|---|---|---|---|
+| `blazor-client` | Public | Authorization Code + PKCE, Password, Refresh Token | Blazor WASM frontend |
+| `m2m-client` | Confidential | Client Credentials | Machine-to-machine API access |
 
 ---
 
-## 🛡️ Admin Dashboard
-
-The Blazor client has a full admin section at `/admin` (requires `Admin` role):
-
-- **Dashboard** — user counts, client counts, recent sign-ins
-- **User Management** — paginated table, lock/unlock, activate/deactivate, assign roles
-- **OAuth Client Management** — create/view/delete OIDC clients with live secret reveal
-
----
-
-## 📁 Project Structure
+## Architecture
 
 ```
-OAuthSolution/
-├── OAuthSolution.sln
-└── src/
-    ├── AuthServer/
-    │   ├── AuthServer.Domain/               # Pure domain — no deps
-    │   │   ├── Entities/
-    │   │   │   ├── ApplicationUser.cs       # Core user aggregate
-    │   │   │   ├── OAuthClient.cs           # Client aggregate
-    │   │   │   └── UserRole.cs              # Value objects
-    │   │   ├── Enums/Enums.cs
-    │   │   ├── Events/DomainEvents.cs       # Domain event records
-    │   │   └── Interfaces/
-    │   │       ├── IRepositories.cs         # Repository + UoW contracts
-    │   │       └── IServices.cs             # Service contracts
-    │   │
-    │   ├── AuthServer.Application/          # Use cases
-    │   │   ├── DTOs/Dtos.cs                 # Request/Response models + Result<T>
-    │   │   └── Services/
-    │   │       ├── UserService.cs           # User use cases
-    │   │       └── OAuthClientService.cs    # Client CRUD use cases
-    │   │
-    │   ├── AuthServer.Infrastructure/       # Framework implementations
-    │   │   ├── Data/ApplicationDbContext.cs # EF Core context + Identity + OpenIddict
-    │   │   ├── OpenIddict/OpenIddictSeeder.cs # Seeds dev clients on startup
-    │   │   ├── Services/IdentityPasswordHasher.cs
-    │   │   └── InfrastructureServiceExtensions.cs # DI registration
-    │   │
-    │   └── AuthServer.API/                  # HTTP layer
-    │       ├── Controllers/
-    │       │   ├── ConnectController.cs     # OIDC protocol endpoints
-    │       │   ├── AccountController.cs     # Auth + SSO callbacks
-    │       │   └── AdminController.cs       # Admin API
-    │       ├── appsettings.json
-    │       └── Program.cs                   # Composition root
-    │
-    └── BlazorClient/                        # Blazor WASM frontend
-        ├── Pages/
-        │   ├── Index.razor                  # Home / landing
-        │   ├── Profile.razor                # User profile
-        │   ├── Auth/Authentication.razor    # OIDC callbacks
-        │   └── Admin/
-        │       ├── Dashboard.razor          # Stats overview
-        │       ├── Users.razor              # User management
-        │       └── Clients.razor            # OAuth client management
-        ├── Services/ApiServices.cs          # Typed HTTP clients
-        ├── Shared/                          # Layout + UI components
-        ├── wwwroot/
-        │   ├── index.html                   # SPA host page
-        │   └── appsettings.json             # OIDC config (authority, clientId)
-        ├── _Imports.razor
-        ├── App.razor                        # Router + auth state
-        └── Program.cs                       # OIDC + HTTP client setup
+Domain  ←  Application  ←  Infrastructure  ←  API
+                                           ←  DataContext  ←  Repositories  ←  Services
 ```
+
+Dependencies always point inward. The Domain has no external package references.
+
+| Project | Role |
+|---|---|
+| `AuthServer.Domain` | Aggregates (`ApplicationUser`, `OAuthClient`, `Tenant`), domain events, `Result<T>` |
+| `AuthServer.Infrastructure` | EF Core + OpenIddict + Identity wiring, `OpenIddictSeeder` |
+| `PixSmith.Authorization.DataContext` | `ApplicationDbContext`, EF records, shared DTOs |
+| `PixSmith.Authorization.Repositories` | EF Core repository implementations |
+| `PixSmith.Authorization.Services` | Business logic (`UserService`, `OAuthClientService`, `TenantService`, `OidcAppService`) |
+| `AuthServer.API` | Controllers, `Program.cs`, `AdminUserSeeder` |
+| `BlazorClient` | Blazor WASM SPA — hosted by the API at the same origin |
 
 ---
 
-## 🏭 Moving to Production
+## Production Checklist
 
-### 1. Database
-Replace SQLite with PostgreSQL or SQL Server:
-
-```csharp
-// In InfrastructureServiceExtensions.cs, swap:
-options.UseSqlite(connectionString);
-// For:
-options.UseNpgsql(connectionString);       // PostgreSQL
-options.UseSqlServer(connectionString);    // SQL Server
-```
-
-### 2. Signing Certificates
-Replace development certificates with real ones:
-
-```csharp
-// In InfrastructureServiceExtensions.cs, swap:
-options.AddDevelopmentEncryptionCertificate()
-       .AddDevelopmentSigningCertificate();
-// For:
-options.AddEncryptionCertificate(cert)
-       .AddSigningCertificate(cert);
-```
-
-### 3. Token Lifetimes
-Tune token lifetimes in `appsettings.json` and the OpenIddict client descriptor.
-
-### 4. Email Confirmation
-Set `options.SignIn.RequireConfirmedEmail = true` and implement `IEmailService` (SMTP/SendGrid/etc.)
-
-### 5. HTTPS / Reverse Proxy
-Ensure `UseForwardedHeaders()` is called if running behind nginx/YARP.
+- [ ] Change the M2M client secret (`OpenIddict__M2MClient__ClientSecret`)
+- [ ] Remove `AdminSeed__*` environment variables after first boot
+- [ ] Replace SQLite with PostgreSQL or SQL Server
+- [ ] Replace `AddEphemeralEncryptionKey/SigningKey` with real X.509 certificates
+- [ ] Mount a persistent volume for `/app/data` (database + data-protection keys)
+- [ ] Set `RequireConfirmedEmail = true` and implement `IEmailService`
+- [ ] Configure a reverse proxy (nginx, Traefik) and set `OpenIddict__BlazorClient__BaseUri` to the public URL
+- [ ] Review Identity password and lockout policy in `appsettings.json`
 
 ---
 
-## 🧩 Key Design Decisions
+## Development Commands
 
-| Decision | Choice | Why |
-|---|---|---|
-| Auth server framework | **OpenIddict** | Fully integrated with EF Core + Identity; no separate server process needed |
-| Architecture | **Onion / Clean** | Domain stays framework-free; easy to test and evolve |
-| ORM | **EF Core** | Matches Identity and OpenIddict EF Core stores |
-| Frontend auth | **MSAL-style OIDC** via `WebAssembly.Authentication` | Built-in PKCE, token storage, silent refresh |
-| Styling | **Tailwind CSS** (CDN) | No build step required for Blazor WASM |
-| Logging | **Serilog** | Structured logging, easy sink swapping |
+```powershell
+# Restore and build
+dotnet restore
+dotnet build OAuthSolution.sln
 
----
+# Run (serves API + Blazor WASM at https://localhost:7100)
+dotnet run --project src/AuthServer/AuthServer.API
 
-## 📜 License
-MIT
+# Add an EF Core migration
+dotnet ef migrations add <MigrationName> `
+  --project PixSmith.Authorization.DataContext `
+  --startup-project src/AuthServer/AuthServer.API
+
+# Apply migrations manually (also runs automatically on startup)
+dotnet ef database update `
+  --project PixSmith.Authorization.DataContext `
+  --startup-project src/AuthServer/AuthServer.API
+
+# View configured user-secrets
+dotnet user-secrets list --project src/AuthServer/AuthServer.API
+```

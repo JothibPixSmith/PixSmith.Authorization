@@ -46,6 +46,27 @@ public sealed record CreateClientResponseModel(Guid Id, string ClientId, string 
 
 public sealed record RoleModel(Guid Id, string Name);
 
+public sealed record ClaimModel(string Type, string Value);
+
+public sealed class AdminUpdateUserFormModel
+{
+    public string Username { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+    public bool EmailConfirmed { get; set; }
+}
+
+public sealed record TenantModel(
+    Guid Id, string Name, string Slug, string? Description,
+    bool IsActive, DateTimeOffset CreatedAt);
+
+public sealed class CreateTenantFormModel
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
+
 // ─── Admin API Service ─────────────────────────────────────────────────────
 
 public interface IAdminApiService
@@ -56,6 +77,13 @@ public interface IAdminApiService
     Task ActivateUserAsync(Guid id);
     Task DeactivateUserAsync(Guid id);
     Task AssignRoleAsync(Guid id, string role);
+    Task RemoveRoleAsync(Guid id, string role);
+    Task DeleteUserAsync(Guid id);
+    Task<UserModel> UpdateUserAsync(Guid id, AdminUpdateUserFormModel model);
+    Task ResetPasswordAsync(Guid id, string newPassword);
+    Task<List<ClaimModel>> GetClaimsAsync(Guid id);
+    Task AddClaimAsync(Guid id, string type, string value);
+    Task RemoveClaimAsync(Guid id, string type, string value);
     Task<IEnumerable<RoleModel>> GetRolesAsync();
     Task<RoleModel> CreateRoleAsync(string name);
     Task DeleteRoleAsync(string name);
@@ -87,6 +115,41 @@ public sealed class AdminApiService(HttpClient http) : IAdminApiService
 
     public Task AssignRoleAsync(Guid id, string role) =>
         http.PostAsJsonAsync($"api/admin/users/{id}/roles", new { roleName = role }).AsTask();
+
+    public Task RemoveRoleAsync(Guid id, string role) =>
+        http.DeleteAsync($"api/admin/users/{id}/roles/{Uri.EscapeDataString(role)}").AsTask();
+
+    public Task DeleteUserAsync(Guid id) =>
+        http.DeleteAsync($"api/admin/users/{id}").AsTask();
+
+    public async Task<UserModel> UpdateUserAsync(Guid id, AdminUpdateUserFormModel model)
+    {
+        var response = await http.PutAsJsonAsync($"api/admin/users/{id}", new
+        {
+            model.Username,
+            model.Email,
+            model.FirstName,
+            model.LastName,
+            model.EmailConfirmed,
+        });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<UserModel>()
+            ?? throw new InvalidOperationException("Failed to update user.");
+    }
+
+    public Task ResetPasswordAsync(Guid id, string newPassword) =>
+        http.PostAsJsonAsync($"api/admin/users/{id}/reset-password", new { newPassword }).AsTask();
+
+    public async Task<List<ClaimModel>> GetClaimsAsync(Guid id) =>
+        await http.GetFromJsonAsync<List<ClaimModel>>($"api/admin/users/{id}/claims") ?? [];
+
+    public Task AddClaimAsync(Guid id, string type, string value) =>
+        http.PostAsJsonAsync($"api/admin/users/{id}/claims", new { type, value }).AsTask();
+
+    public Task RemoveClaimAsync(Guid id, string type, string value) =>
+        http.DeleteAsync(
+            $"api/admin/users/{id}/claims?type={Uri.EscapeDataString(type)}&value={Uri.EscapeDataString(value)}")
+        .AsTask();
 
     public async Task<IEnumerable<RoleModel>> GetRolesAsync() =>
         await http.GetFromJsonAsync<List<RoleModel>>("api/admin/roles") ?? [];
@@ -130,6 +193,134 @@ public sealed class AdminApiService(HttpClient http) : IAdminApiService
 
     public Task DeactivateClientAsync(Guid id) =>
         http.PostAsync($"api/admin/clients/{id}/deactivate", null).AsTask();
+}
+
+// ─── OpenIddict App Models & Service ──────────────────────────────────────
+
+public sealed record OidcAppModel(
+    string ClientId,
+    string? DisplayName,
+    string ClientType,
+    List<string> RedirectUris,
+    List<string> PostLogoutRedirectUris,
+    List<string> Permissions,
+    List<string> Requirements)
+{
+    public List<string> GrantTypes => Permissions
+        .Where(p => p.StartsWith("gt:"))
+        .Select(p => p[3..])
+        .ToList();
+
+    public List<string> Scopes => Permissions
+        .Where(p => p.StartsWith("scp:"))
+        .Select(p => p[4..])
+        .ToList();
+
+    public bool RequiresPkce => Requirements.Any(r => r.Contains("proof_key"));
+}
+
+public sealed class CreateOidcAppFormModel
+{
+    public string ClientId { get; set; } = string.Empty;
+    public string? ClientSecret { get; set; }
+    public string? DisplayName { get; set; }
+    public string ClientType { get; set; } = "public";
+    public List<string> RedirectUris { get; set; } = [];
+    public List<string> PostLogoutRedirectUris { get; set; } = [];
+    public List<string> Scopes { get; set; } = ["openid", "profile", "email"];
+    public List<string> GrantTypes { get; set; } = ["authorization_code", "refresh_token"];
+}
+
+public sealed class UpdateOidcAppFormModel
+{
+    public string? DisplayName { get; set; }
+    public List<string> RedirectUris { get; set; } = [];
+    public List<string> PostLogoutRedirectUris { get; set; } = [];
+    public List<string> Scopes { get; set; } = [];
+    public List<string> GrantTypes { get; set; } = [];
+}
+
+public interface IOidcAppApiService
+{
+    Task<List<OidcAppModel>> GetAppsAsync();
+    Task<OidcAppModel> CreateAppAsync(CreateOidcAppFormModel model);
+    Task UpdateAppAsync(string clientId, UpdateOidcAppFormModel model);
+    Task DeleteAppAsync(string clientId);
+}
+
+public sealed class OidcAppApiService(HttpClient http) : IOidcAppApiService
+{
+    public async Task<List<OidcAppModel>> GetAppsAsync() =>
+        await http.GetFromJsonAsync<List<OidcAppModel>>("api/admin/oidc-apps") ?? [];
+
+    public async Task<OidcAppModel> CreateAppAsync(CreateOidcAppFormModel model)
+    {
+        var response = await http.PostAsJsonAsync("api/admin/oidc-apps", new
+        {
+            model.ClientId,
+            model.ClientSecret,
+            model.DisplayName,
+            model.ClientType,
+            model.RedirectUris,
+            model.PostLogoutRedirectUris,
+            model.Scopes,
+            model.GrantTypes,
+        });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<OidcAppModel>()
+            ?? throw new InvalidOperationException("Failed to create application.");
+    }
+
+    public Task UpdateAppAsync(string clientId, UpdateOidcAppFormModel model) =>
+        http.PutAsJsonAsync($"api/admin/oidc-apps/{Uri.EscapeDataString(clientId)}", new
+        {
+            model.DisplayName,
+            model.RedirectUris,
+            model.PostLogoutRedirectUris,
+            model.Scopes,
+            model.GrantTypes,
+        }).AsTask();
+
+    public Task DeleteAppAsync(string clientId) =>
+        http.DeleteAsync($"api/admin/oidc-apps/{Uri.EscapeDataString(clientId)}").AsTask();
+}
+
+// ─── Tenant API Service ────────────────────────────────────────────────────
+
+public interface ITenantApiService
+{
+    Task<IEnumerable<TenantModel>> GetTenantsAsync();
+    Task<TenantModel> CreateTenantAsync(CreateTenantFormModel model);
+    Task UpdateTenantAsync(Guid id, CreateTenantFormModel model);
+    Task ActivateTenantAsync(Guid id);
+    Task DeactivateTenantAsync(Guid id);
+    Task DeleteTenantAsync(Guid id);
+}
+
+public sealed class TenantApiService(HttpClient http) : ITenantApiService
+{
+    public async Task<IEnumerable<TenantModel>> GetTenantsAsync() =>
+        await http.GetFromJsonAsync<List<TenantModel>>("api/admin/tenants") ?? [];
+
+    public async Task<TenantModel> CreateTenantAsync(CreateTenantFormModel model)
+    {
+        var response = await http.PostAsJsonAsync("api/admin/tenants", new { model.Name, model.Description });
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TenantModel>()
+            ?? throw new InvalidOperationException("Failed to create tenant.");
+    }
+
+    public Task UpdateTenantAsync(Guid id, CreateTenantFormModel model) =>
+        http.PutAsJsonAsync($"api/admin/tenants/{id}", new { model.Name, model.Description }).AsTask();
+
+    public Task ActivateTenantAsync(Guid id) =>
+        http.PostAsync($"api/admin/tenants/{id}/activate", null).AsTask();
+
+    public Task DeactivateTenantAsync(Guid id) =>
+        http.PostAsync($"api/admin/tenants/{id}/deactivate", null).AsTask();
+
+    public Task DeleteTenantAsync(Guid id) =>
+        http.DeleteAsync($"api/admin/tenants/{id}").AsTask();
 }
 
 // ─── Account API Service ───────────────────────────────────────────────────

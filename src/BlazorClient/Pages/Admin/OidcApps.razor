@@ -1,0 +1,339 @@
+@page "/admin/oidc-apps"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject IOidcAppApiService OidcApi
+
+<PageTitle>OpenIddict Applications</PageTitle>
+
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-800">🔑 OIDC Applications</h1>
+        <div class="flex gap-2">
+            <a href="/admin" class="text-sm text-blue-600 hover:underline">← Dashboard</a>
+            <button @onclick="ShowCreateModal" class="btn-primary text-sm">+ New Application</button>
+        </div>
+    </div>
+
+    @if (_showCreate)
+    {
+        <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto py-8">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 mx-4">
+                <h2 class="text-lg font-bold text-gray-800">
+                    @(_editing is not null ? $"Edit — {_editing.ClientId}" : "Register New Application")
+                </h2>
+
+                <div class="grid grid-cols-2 gap-4">
+                    @if (_editing is null)
+                    {
+                        <div class="col-span-2">
+                            <InputField Label="Client ID" @bind-Value="_form.ClientId" Placeholder="my-app" />
+                        </div>
+                    }
+                    <div class="col-span-2">
+                        <InputField Label="Display Name" @bind-Value="_form.DisplayName" Placeholder="My Application" />
+                    </div>
+
+                    @if (_editing is null)
+                    {
+                        <div>
+                            <label class="text-sm font-medium text-gray-700">Client Type</label>
+                            <select @bind="_form.ClientType" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                <option value="public">Public (SPA / mobile — uses PKCE)</option>
+                                <option value="confidential">Confidential (server-side)</option>
+                            </select>
+                        </div>
+
+                        @if (_form.ClientType == "confidential")
+                        {
+                            <div>
+                                <InputField Label="Client Secret" @bind-Value="_form.ClientSecret" Placeholder="Leave blank to auto-generate" />
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">Grant Types</p>
+                    <div class="flex flex-wrap gap-3">
+                        @foreach (var grant in _allGrantTypes)
+                        {
+                            var captured = grant;
+                            <label class="flex items-center gap-2 text-sm text-gray-600">
+                                <input type="checkbox"
+                                       checked="@_form.GrantTypes.Contains(captured)"
+                                       @onchange="e => ToggleList(_form.GrantTypes, captured, (bool)e.Value!)" />
+                                @captured
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">Scopes</p>
+                    <div class="flex flex-wrap gap-3">
+                        @foreach (var scope in _allScopes)
+                        {
+                            var captured = scope;
+                            <label class="flex items-center gap-2 text-sm text-gray-600">
+                                <input type="checkbox"
+                                       checked="@_form.Scopes.Contains(captured)"
+                                       @onchange="e => ToggleList(_form.Scopes, captured, (bool)e.Value!)" />
+                                @captured
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-1">Redirect URIs</p>
+                    <div class="flex gap-2">
+                        <input @bind="_newRedirectUri" class="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                               placeholder="https://yourapp.com/callback" />
+                        <button @onclick="() => AddUri(_form.RedirectUris, ref _newRedirectUri)"
+                                class="btn-secondary text-sm">Add</button>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        @foreach (var uri in _form.RedirectUris)
+                        {
+                            var captured = uri;
+                            <span class="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded flex items-center gap-1">
+                                @captured
+                                <button @onclick="() => _form.RedirectUris.Remove(captured)" class="hover:text-red-500">×</button>
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-1">Post-Logout Redirect URIs</p>
+                    <div class="flex gap-2">
+                        <input @bind="_newLogoutUri" class="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                               placeholder="https://yourapp.com/signed-out" />
+                        <button @onclick="() => AddUri(_form.PostLogoutRedirectUris, ref _newLogoutUri)"
+                                class="btn-secondary text-sm">Add</button>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        @foreach (var uri in _form.PostLogoutRedirectUris)
+                        {
+                            var captured = uri;
+                            <span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded flex items-center gap-1">
+                                @captured
+                                <button @onclick="() => _form.PostLogoutRedirectUris.Remove(captured)" class="hover:text-red-500">×</button>
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_formError))
+                {
+                    <p class="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">@_formError</p>
+                }
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @onclick="HideModal" class="btn-secondary">Cancel</button>
+                    <button @onclick="SubmitAsync" class="btn-primary" disabled="@_saving">
+                        @(_saving ? "Saving..." : (_editing is not null ? "Save Changes" : "Register"))
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else if (!_apps.Any())
+    {
+        <div class="text-center py-16 text-gray-400">
+            <p class="text-4xl mb-3">🔑</p>
+            <p class="text-lg font-medium">No applications registered</p>
+            <p class="text-sm">Register your first OIDC application to get started.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            @foreach (var app in _apps)
+            {
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <h3 class="font-semibold text-gray-800 truncate">@(app.DisplayName ?? app.ClientId)</h3>
+                            <p class="text-xs text-gray-400 font-mono mt-0.5 truncate">@app.ClientId</p>
+                        </div>
+                        <span class="shrink-0 px-2 py-0.5 rounded-full text-xs @(app.ClientType == "public" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")">
+                            @app.ClientType
+                        </span>
+                    </div>
+
+                    @if (app.GrantTypes.Any())
+                    {
+                        <div>
+                            <p class="text-xs text-gray-400 mb-1">Grant types</p>
+                            <div class="flex flex-wrap gap-1">
+                                @foreach (var g in app.GrantTypes)
+                                {
+                                    <span class="px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs">@g</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (app.Scopes.Any())
+                    {
+                        <div>
+                            <p class="text-xs text-gray-400 mb-1">Scopes</p>
+                            <div class="flex flex-wrap gap-1">
+                                @foreach (var s in app.Scopes)
+                                {
+                                    <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">@s</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (app.RedirectUris.Any())
+                    {
+                        <div>
+                            <p class="text-xs text-gray-400 mb-1">Redirect URIs</p>
+                            @foreach (var uri in app.RedirectUris)
+                            {
+                                <p class="text-xs text-gray-500 font-mono truncate">@uri</p>
+                            }
+                        </div>
+                    }
+
+                    @if (app.RequiresPkce)
+                    {
+                        <p class="text-xs text-amber-600">🔒 PKCE required</p>
+                    }
+
+                    <div class="flex gap-3 pt-1 border-t border-gray-100">
+                        <button @onclick="() => ShowEditModal(app)"
+                                class="text-xs text-blue-600 hover:underline">Edit</button>
+                        <button @onclick="() => DeleteAppAsync(app.ClientId)"
+                                class="text-xs text-red-500 hover:underline">Delete</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] _allGrantTypes =
+        ["authorization_code", "client_credentials", "password", "refresh_token"];
+
+    private static readonly string[] _allScopes =
+        ["openid", "profile", "email", "roles", "offline_access", "api", "admin"];
+
+    private List<OidcAppModel> _apps = [];
+    private bool _loading = true;
+    private bool _showCreate;
+    private bool _saving;
+    private string? _formError;
+    private OidcAppModel? _editing;
+
+    private CreateOidcAppFormModel _form = new();
+    private string _newRedirectUri = string.Empty;
+    private string _newLogoutUri = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _apps = await OidcApi.GetAppsAsync(); }
+        finally { _loading = false; }
+    }
+
+    private void ShowCreateModal()
+    {
+        _editing = null;
+        _form = new();
+        _newRedirectUri = string.Empty;
+        _newLogoutUri = string.Empty;
+        _formError = null;
+        _showCreate = true;
+    }
+
+    private void ShowEditModal(OidcAppModel app)
+    {
+        _editing = app;
+        _form = new()
+        {
+            DisplayName = app.DisplayName,
+            ClientType = app.ClientType,
+            RedirectUris = [.. app.RedirectUris],
+            PostLogoutRedirectUris = [.. app.PostLogoutRedirectUris],
+            Scopes = [.. app.Scopes],
+            GrantTypes = [.. app.GrantTypes],
+        };
+        _newRedirectUri = string.Empty;
+        _newLogoutUri = string.Empty;
+        _formError = null;
+        _showCreate = true;
+    }
+
+    private void HideModal() => _showCreate = false;
+
+    private async Task SubmitAsync()
+    {
+        if (_editing is null && string.IsNullOrWhiteSpace(_form.ClientId))
+        {
+            _formError = "Client ID is required.";
+            return;
+        }
+
+        _saving = true;
+        _formError = null;
+        try
+        {
+            if (_editing is not null)
+            {
+                var update = new UpdateOidcAppFormModel
+                {
+                    DisplayName = _form.DisplayName,
+                    RedirectUris = _form.RedirectUris,
+                    PostLogoutRedirectUris = _form.PostLogoutRedirectUris,
+                    Scopes = _form.Scopes,
+                    GrantTypes = _form.GrantTypes,
+                };
+                await OidcApi.UpdateAppAsync(_editing.ClientId, update);
+            }
+            else
+            {
+                await OidcApi.CreateAppAsync(_form);
+            }
+
+            _showCreate = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _formError = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteAppAsync(string clientId)
+    {
+        await OidcApi.DeleteAppAsync(clientId);
+        await LoadAsync();
+    }
+
+    private static void ToggleList(List<string> list, string value, bool add)
+    {
+        if (add) { if (!list.Contains(value)) list.Add(value); }
+        else list.Remove(value);
+    }
+
+    private static void AddUri(List<string> list, ref string input)
+    {
+        var trimmed = input.Trim();
+        if (!string.IsNullOrEmpty(trimmed) && !list.Contains(trimmed))
+            list.Add(trimmed);
+        input = string.Empty;
+    }
+}

@@ -1,0 +1,16 @@
+{
+  "Environment": "Development",
+  "BaseUri": "https://localhost:7100",
+  "ConnectionString": "Data Source=auth.db",
+  "DataProtectionPath": "",
+  "BlazorClientId": "blazor-client",
+  "M2MClientId": "m2m-client",
+  "M2MClientSecret": "replace-with-a-strong-secret",
+  "AdminEmail": "admin@yourcompany.com",
+  "AdminUsername": "admin",
+  "AdminPassword": "Replace@Me1!",
+  "GoogleClientId": "",
+  "GoogleClientSecret": "",
+  "MicrosoftClientId": "",
+  "MicrosoftClientSecret": ""
+}

@@ -152,12 +152,15 @@ public static class InfrastructureServiceExtensions
 
 			// Requires a valid bearer token and the "Admin" role (for user-issued tokens)
 			// or the "admin" scope (for M2M tokens).
+			// Use HasClaim with the JWT short-form claim type ("role") rather than IsInRole,
+			// because the ClaimsIdentity rebuilt by OpenIddict validation uses the default
+			// Windows-URI RoleClaimType which does not match the JWT "role" claim.
 			options.AddPolicy("AdminAccess", policy =>
 			{
 				policy.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
 				policy.RequireAuthenticatedUser();
 				policy.RequireAssertion(ctx =>
-					ctx.User.IsInRole("Admin") ||
+					ctx.User.HasClaim(Claims.Role, "Admin") ||
 					ctx.User.HasClaim(Claims.Private.Scope, "admin"));
 			});
 		});
@@ -175,8 +178,8 @@ public static class InfrastructureServiceExtensions
 		// ─── Repositories ───────────────────────────────────────
 
 		services.AddTransient<IOAuthClientRepository, OAuthClientRepository>();
-
 		services.AddTransient<IUserRepository, UserRepository>();
+		services.AddTransient<ITenantRepository, TenantRepository>();
 
 		// ─── Services ───────────────────────────────────────
 
@@ -188,6 +191,8 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IAdminService, AdminService>();
 		services.AddTransient<IConnectService, ConnectService>();
 		services.AddTransient<IOAuthClientService, OAuthClientService>();
+		services.AddTransient<ITenantService, TenantService>();
+		services.AddScoped<IOidcAppService, OidcAppService>();
 
 		services.AddHostedService<OpenIddictSeeder>();
 

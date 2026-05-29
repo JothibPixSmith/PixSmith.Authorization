@@ -88,6 +88,84 @@ public sealed class AdminService(
         return Result.Success();
     }
 
+    public async Task<Result<UserDto>> UpdateUserAsync(
+        Guid userId, AdminUpdateUserRequest request, CancellationToken ct = default)
+    {
+        var domainResult = await userService.AdminUpdateAsync(userId, request, ct);
+        if (!domainResult.IsSuccess)
+            return domainResult;
+
+        var identityUser = await userManager.FindByIdAsync(userId.ToString());
+        if (identityUser is not null)
+        {
+            identityUser.UserName = request.Username;
+            identityUser.NormalizedUserName = request.Username.ToUpperInvariant();
+            identityUser.Email = request.Email;
+            identityUser.NormalizedEmail = request.Email.ToUpperInvariant();
+            identityUser.EmailConfirmed = request.EmailConfirmed;
+            await userManager.UpdateAsync(identityUser);
+        }
+
+        logger.LogInformation("Admin updated user {UserId}", userId);
+        return domainResult;
+    }
+
+    public async Task<Result> ResetPasswordAsync(
+        Guid userId, string newPassword, CancellationToken ct = default)
+    {
+        var identityUser = await userManager.FindByIdAsync(userId.ToString());
+        if (identityUser is null)
+            return Result.Failure("User not found.");
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(identityUser);
+        var result = await userManager.ResetPasswordAsync(identityUser, token, newPassword);
+        if (!result.Succeeded)
+            return Result.Failure(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+        logger.LogInformation("Admin reset password for user {UserId}", userId);
+        return Result.Success();
+    }
+
+    public async Task<Result<IReadOnlyList<ClaimDto>>> GetClaimsAsync(
+        Guid userId, CancellationToken ct = default)
+    {
+        var identityUser = await userManager.FindByIdAsync(userId.ToString());
+        if (identityUser is null)
+            return Result<IReadOnlyList<ClaimDto>>.Failure("User not found.");
+
+        var claims = await userManager.GetClaimsAsync(identityUser);
+        IReadOnlyList<ClaimDto> dtos = claims.Select(c => new ClaimDto(c.Type, c.Value)).ToList();
+        return Result<IReadOnlyList<ClaimDto>>.Success(dtos);
+    }
+
+    public async Task<Result> AddClaimAsync(
+        Guid userId, string type, string value, CancellationToken ct = default)
+    {
+        var identityUser = await userManager.FindByIdAsync(userId.ToString());
+        if (identityUser is null)
+            return Result.Failure("User not found.");
+
+        var result = await userManager.AddClaimAsync(
+            identityUser, new System.Security.Claims.Claim(type, value));
+        return result.Succeeded
+            ? Result.Success()
+            : Result.Failure(string.Join("; ", result.Errors.Select(e => e.Description)));
+    }
+
+    public async Task<Result> RemoveClaimAsync(
+        Guid userId, string type, string value, CancellationToken ct = default)
+    {
+        var identityUser = await userManager.FindByIdAsync(userId.ToString());
+        if (identityUser is null)
+            return Result.Failure("User not found.");
+
+        var result = await userManager.RemoveClaimAsync(
+            identityUser, new System.Security.Claims.Claim(type, value));
+        return result.Succeeded
+            ? Result.Success()
+            : Result.Failure(string.Join("; ", result.Errors.Select(e => e.Description)));
+    }
+
     public Task<Result<IEnumerable<RoleDto>>> GetRolesAsync(CancellationToken ct = default)
     {
         var roles = roleManager.Roles

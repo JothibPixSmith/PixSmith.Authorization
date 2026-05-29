@@ -14,6 +14,8 @@ public sealed class AdminController(
     IAdminService adminService,
     IUserService userService,
     IOAuthClientService clientService,
+    ITenantService tenantService,
+    IOidcAppService oidcAppService,
     UserManager<IdentityUser<Guid>> userManager) : ControllerBase
 {
     // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -56,6 +58,44 @@ public sealed class AdminController(
     public async Task<IActionResult> RemoveRole(Guid id, string roleName)
     {
         var result = await adminService.RemoveRoleAsync(id, roleName);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpPut("users/{id:guid}")]
+    [ProducesResponseType(typeof(UserDto), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] AdminUpdateUserRequest request)
+    {
+        var result = await adminService.UpdateUserAsync(id, request);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(new { error = result.Error });
+    }
+
+    [HttpPost("users/{id:guid}/reset-password")]
+    public async Task<IActionResult> ResetPassword(Guid id, [FromBody] AdminResetPasswordRequest request)
+    {
+        var result = await adminService.ResetPasswordAsync(id, request.NewPassword);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpGet("users/{id:guid}/claims")]
+    [ProducesResponseType(typeof(IReadOnlyList<ClaimDto>), 200)]
+    public async Task<IActionResult> GetClaims(Guid id)
+    {
+        var result = await adminService.GetClaimsAsync(id);
+        return result.IsSuccess ? Ok(result.Value) : NotFound();
+    }
+
+    [HttpPost("users/{id:guid}/claims")]
+    public async Task<IActionResult> AddClaim(Guid id, [FromBody] AddClaimRequest request)
+    {
+        var result = await adminService.AddClaimAsync(id, request.Type, request.Value);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("users/{id:guid}/claims")]
+    public async Task<IActionResult> RemoveClaim(Guid id, [FromQuery] string type, [FromQuery] string value)
+    {
+        var result = await adminService.RemoveClaimAsync(id, type, value);
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 
@@ -200,6 +240,104 @@ public sealed class AdminController(
     public async Task<IActionResult> DeleteClient(Guid id)
     {
         var result = await clientService.DeleteAsync(id);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    // ─── Tenant Management ────────────────────────────────────────────────────
+
+    [HttpGet("tenants")]
+    [ProducesResponseType(typeof(IEnumerable<TenantDto>), 200)]
+    public async Task<IActionResult> GetTenants()
+    {
+        var result = await tenantService.GetAllAsync();
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(500);
+    }
+
+    [HttpGet("tenants/{id:guid}")]
+    [ProducesResponseType(typeof(TenantDto), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> GetTenant(Guid id)
+    {
+        var result = await tenantService.GetByIdAsync(id);
+        return result.IsSuccess ? Ok(result.Value) : NotFound();
+    }
+
+    [HttpPost("tenants")]
+    [ProducesResponseType(typeof(TenantDto), 201)]
+    public async Task<IActionResult> CreateTenant([FromBody] CreateTenantRequest request)
+    {
+        var result = await tenantService.CreateAsync(request);
+        if (!result.IsSuccess) return BadRequest(new { error = result.Error });
+        return CreatedAtAction(nameof(GetTenant), new { id = result.Value!.Id }, result.Value);
+    }
+
+    [HttpPut("tenants/{id:guid}")]
+    public async Task<IActionResult> UpdateTenant(Guid id, [FromBody] UpdateTenantRequest request)
+    {
+        var result = await tenantService.UpdateAsync(id, request);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpPost("tenants/{id:guid}/activate")]
+    public async Task<IActionResult> ActivateTenant(Guid id)
+    {
+        var result = await tenantService.ActivateAsync(id);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpPost("tenants/{id:guid}/deactivate")]
+    public async Task<IActionResult> DeactivateTenant(Guid id)
+    {
+        var result = await tenantService.DeactivateAsync(id);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("tenants/{id:guid}")]
+    public async Task<IActionResult> DeleteTenant(Guid id)
+    {
+        var result = await tenantService.DeleteAsync(id);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    // ─── OpenIddict Application Management ───────────────────────────────────
+
+    [HttpGet("oidc-apps")]
+    [ProducesResponseType(typeof(IReadOnlyList<OidcAppDto>), 200)]
+    public async Task<IActionResult> GetOidcApps(CancellationToken ct)
+    {
+        var result = await oidcAppService.GetAllAsync(ct);
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(500, new { error = result.Error });
+    }
+
+    [HttpGet("oidc-apps/{clientId}")]
+    [ProducesResponseType(typeof(OidcAppDto), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> GetOidcApp(string clientId, CancellationToken ct)
+    {
+        var result = await oidcAppService.GetByClientIdAsync(clientId, ct);
+        return result.IsSuccess ? Ok(result.Value) : NotFound();
+    }
+
+    [HttpPost("oidc-apps")]
+    [ProducesResponseType(typeof(OidcAppDto), 201)]
+    public async Task<IActionResult> CreateOidcApp([FromBody] CreateOidcAppRequest request, CancellationToken ct)
+    {
+        var result = await oidcAppService.CreateAsync(request, ct);
+        if (!result.IsSuccess) return BadRequest(new { error = result.Error });
+        return CreatedAtAction(nameof(GetOidcApp), new { clientId = result.Value!.ClientId }, result.Value);
+    }
+
+    [HttpPut("oidc-apps/{clientId}")]
+    public async Task<IActionResult> UpdateOidcApp(string clientId, [FromBody] UpdateOidcAppRequest request, CancellationToken ct)
+    {
+        var result = await oidcAppService.UpdateAsync(clientId, request, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("oidc-apps/{clientId}")]
+    public async Task<IActionResult> DeleteOidcApp(string clientId, CancellationToken ct)
+    {
+        var result = await oidcAppService.DeleteAsync(clientId, ct);
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 }

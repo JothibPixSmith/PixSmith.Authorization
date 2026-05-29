@@ -186,6 +186,16 @@ public sealed class ApplicationUser
         ProfilePictureUrl = profilePictureUrl;
     }
 
+    public void UpdateCoreFields(string username, string email, bool emailConfirmed)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(username);
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        Username = username.Trim();
+        Email = email.Trim();
+        NormalizedEmail = email.Trim().ToUpperInvariant();
+        EmailConfirmed = emailConfirmed;
+    }
+
     public void EnableTwoFactor() => TwoFactorEnabled = true;
     public void DisableTwoFactor() => TwoFactorEnabled = false;
 

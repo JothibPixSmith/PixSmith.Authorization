@@ -14,6 +14,7 @@ public interface IUserService
 	Task<Result<UserDto>> GetByEmailAsync(string email, CancellationToken ct = default);
 	Task<Result<UserPagedResult>> GetAllAsync(int page = 1, int pageSize = 20, CancellationToken ct = default);
 	Task<Result<UserDto>> UpdateProfileAsync(Guid userId, UpdateUserProfileRequest request, CancellationToken ct = default);
+	Task<Result<UserDto>> AdminUpdateAsync(Guid userId, AdminUpdateUserRequest request, CancellationToken ct = default);
 	Task<Result> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);
 	Task<Result> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default);
 	Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default);
@@ -97,6 +98,18 @@ public sealed class UserService : IUserService
 		if (user is null) return Result<UserDto>.Failure("User not found.");
 
 		user.UpdateProfile(request.FirstName, request.LastName, request.PhoneNumber, request.ProfilePictureUrl);
+		await this.repository.UpdateAsync(user, ct);
+
+		return Result<UserDto>.Success(MapToDto(user));
+	}
+
+	public async Task<Result<UserDto>> AdminUpdateAsync(Guid userId, AdminUpdateUserRequest request, CancellationToken ct = default)
+	{
+		var user = await this.repository.GetByIdAsync(userId, ct);
+		if (user is null) return Result<UserDto>.Failure("User not found.");
+
+		user.UpdateCoreFields(request.Username, request.Email, request.EmailConfirmed);
+		user.UpdateProfile(request.FirstName, request.LastName, user.PhoneNumber, user.ProfilePictureUrl);
 		await this.repository.UpdateAsync(user, ct);
 
 		return Result<UserDto>.Success(MapToDto(user));

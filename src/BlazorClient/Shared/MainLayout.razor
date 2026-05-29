@@ -17,6 +17,10 @@
                             <AuthorizeView Roles="Admin">
                                 <Authorized context="someOtherContext">
                                     <a href="/admin" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Admin</a>
+                                    <a href="/admin/users" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Users</a>
+                                    <a href="/admin/roles" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Roles</a>
+                                    <a href="/admin/tenants" class="text-gray-600 hover:text-blue-600 text-sm font-medium">Tenants</a>
+                                    <a href="/admin/oidc-apps" class="text-gray-600 hover:text-blue-600 text-sm font-medium">OIDC Apps</a>
                                 </Authorized>
                             </AuthorizeView>
                         </Authorized>
