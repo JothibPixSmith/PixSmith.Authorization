@@ -1,6 +1,6 @@
-﻿using PixSmith.Authorization.API;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using PixSmith.Authorization.API;
 using PixSmith.Authorization.DataContext;
 using Serilog;
 
@@ -38,7 +38,7 @@ builder.Services.AddSwaggerGen(c =>
 	c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
 	{
 		[new OpenApiSecuritySchemeReference("Bearer", document)] = new List<string>()
-	}); ;
+	});
 });
 
 // ─── App Pipeline ─────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ if (app.Environment.IsDevelopment())
 app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
-    app.UseHttpsRedirection();
+	app.UseHttpsRedirection();
 
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();

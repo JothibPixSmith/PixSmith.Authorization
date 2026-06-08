@@ -29,7 +29,8 @@
         "ASPNETCORE_HTTPS_PORTS": "8081"
       },
       "publishAllPorts": true,
-      "useSSL": true
+      "useSSL": true,
+      "dockerfileRunArguments": "--network=local-network"
     },
     "IIS Express": {
       "commandName": "IISExpress",
