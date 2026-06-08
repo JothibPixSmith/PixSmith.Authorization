@@ -49,9 +49,25 @@ public static class InfrastructureServiceExtensions
 		var connectionString = configuration.GetConnectionString("DefaultConnection")
 			?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required.");
 
+		var databaseProvider = configuration.GetValue("Database:Provider", "Sqlite")!;
+
 		services.AddDbContext<ApplicationDbContext>(options =>
 		{
-			options.UseSqlite(connectionString);
+			switch (databaseProvider)
+			{
+				case "Postgres":
+				case "PostgreSql":
+					options.UseNpgsql(connectionString, npgsql =>
+						npgsql.MigrationsAssembly("PixSmith.Authorization.DataContext.Migrations.Postgres"));
+					break;
+				case "Sqlite":
+					options.UseSqlite(connectionString, sqlite =>
+						sqlite.MigrationsAssembly("PixSmith.Authorization.DataContext.Migrations.Sqlite"));
+					break;
+				default:
+					throw new InvalidOperationException(
+						$"Unsupported Database:Provider '{databaseProvider}'. Supported values: Sqlite, Postgres.");
+			}
 
 			// Register EF Core entity sets for OpenIddict (uses Guid PKs)
 			options.UseOpenIddict<Guid>();

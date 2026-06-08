@@ -1,6 +1,7 @@
 {
   "Environment": "Development",
   "BaseUri": "https://localhost:7100",
+  "DatabaseProvider": "Sqlite",
   "ConnectionString": "Data Source=auth.db",
   "DataProtectionPath": "",
   "BlazorClientId": "blazor-client",

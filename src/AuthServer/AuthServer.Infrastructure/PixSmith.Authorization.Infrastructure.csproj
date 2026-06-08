@@ -12,9 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- EF Core + SQLite (swap to SqlServer/Postgres in production) -->
+    <!-- EF Core providers (selectable at runtime via Database:Provider) -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

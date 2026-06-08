@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
+    <ProjectReference Include="..\..\..\PixSmith.Authorization.DataContext.Migrations.Sqlite\PixSmith.Authorization.DataContext.Migrations.Sqlite.csproj" />
+    <ProjectReference Include="..\..\..\PixSmith.Authorization.DataContext.Migrations.Postgres\PixSmith.Authorization.DataContext.Migrations.Postgres.csproj" />
     <ProjectReference Include="..\..\..\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
     <ProjectReference Include="..\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj" />
     <ProjectReference Include="..\..\BlazorClient\PixSmith.Authorization.BlazorClient.csproj" />

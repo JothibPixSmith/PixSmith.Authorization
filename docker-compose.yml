@@ -15,7 +15,24 @@ services:
 
       # Override the connection string if needed (defaults to /app/data/auth.db).
       # - ConnectionStrings__DefaultConnection=Data Source=/app/data/auth.db
+
+      # Switch the database provider to Postgres (defaults to Sqlite). When set
+      # to Postgres, also point DefaultConnection at a Postgres connection string.
+      # - Database__Provider=Postgres
+      # - ConnectionStrings__DefaultConnection=Host=postgres;Database=pixsmith_auth;Username=postgres;Password=postgres
     restart: unless-stopped
+    networks:
+      - authserver-network
 
 volumes:
   auth-data:
+
+networks:
+  authserver-network:
+    # Set DOCKER_NETWORK_NAME to join a specific Docker network (e.g. one
+    # shared with a reverse proxy or a Postgres container). Defaults to a
+    # project-local network if not set.
+    name: ${DOCKER_NETWORK_NAME:-pixsmith-authorization}
+    # Set DOCKER_NETWORK_EXTERNAL=true to join a network that already exists
+    # instead of letting Compose create one.
+    external: ${DOCKER_NETWORK_EXTERNAL:-false}

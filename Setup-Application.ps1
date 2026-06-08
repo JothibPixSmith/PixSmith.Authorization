@@ -136,7 +136,11 @@ function Collect-Settings([string]$env, $cfg) {
 
     # ── Database ─────────────────────────────────────────────────────────────
     Write-Section "Database"
-    $defaultConn = if ($env -eq "Production") { "Data Source=/app/data/auth.db" } else { "Data Source=auth.db" }
+    $s.DatabaseProvider = Prompt-Choice "Database provider" @("Sqlite", "Postgres") (Get-Cfg $cfg "DatabaseProvider" "Sqlite")
+    $defaultConn = switch ($s.DatabaseProvider) {
+        "Postgres" { "Host=localhost;Database=pixsmith_auth;Username=postgres;Password=postgres" }
+        default    { if ($env -eq "Production") { "Data Source=/app/data/auth.db" } else { "Data Source=auth.db" } }
+    }
     $s.ConnectionString = Prompt-Value "Connection string" (Get-Cfg $cfg "ConnectionString" $defaultConn) -Required
     if ($env -eq "Production") {
         $s.DataProtectionPath = Prompt-Value "Data-protection key path" (Get-Cfg $cfg "DataProtectionPath" "/app/data/keys")
@@ -203,6 +207,9 @@ function Build-AppSettings($s) {
     # Only non-sensitive settings go here.
     # Secrets (M2M secret, admin password, OAuth keys) go to user-secrets / env vars.
     $doc = [ordered]@{
+        Database = [ordered]@{
+            Provider = $s.DatabaseProvider
+        }
         ConnectionStrings = [ordered]@{
             DefaultConnection = $s.ConnectionString
         }
