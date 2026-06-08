@@ -175,14 +175,13 @@ function Collect-Settings([string]$env, $cfg) {
     $s.AdminUsername = Prompt-Value "Admin username" (Get-Cfg $cfg "AdminUsername" $defaultUser) -Required
 
     $fromCfgPwd = Get-Cfg $cfg "AdminPassword" ""
-    if ($fromCfgPwd) {
+    if ($fromCfgPwd -and (Test-Password $fromCfgPwd)) {
         $s.AdminPassword = $fromCfgPwd
-        if (-not (Test-Password $s.AdminPassword)) {
-            Write-Warn "Config password may not meet the policy (8+ chars, uppercase, digit, special)."
-        } else {
-            Write-Note "Admin password loaded from config file."
-        }
+        Write-Note "Admin password loaded from config file."
     } else {
+        if ($fromCfgPwd) {
+            Write-Warn "Config password doesn't meet the policy (8+ chars, uppercase, digit, special) — it would silently fail to seed. Enter a replacement."
+        }
         do {
             $s.AdminPassword = Prompt-Secret "Admin password (8+ chars, uppercase, digit, special char)"
             if (-not (Test-Password $s.AdminPassword)) {
