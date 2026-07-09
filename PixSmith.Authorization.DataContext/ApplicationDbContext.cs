@@ -16,6 +16,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<OAuthClientRegistration> OAuthClientRegistrations => Set<OAuthClientRegistration>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<TenantRecord> Tenants => Set<TenantRecord>();
+    public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -64,6 +65,17 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.Property(x => x.Slug).HasMaxLength(100).IsRequired();
             e.Property(x => x.Description).HasMaxLength(1000);
             e.HasIndex(x => x.Slug).IsUnique();
+        });
+
+        builder.Entity<EmailOutboxMessage>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ToEmail).HasMaxLength(320).IsRequired();
+            e.Property(x => x.Subject).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Body).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            e.Property(x => x.LastError).HasMaxLength(2000);
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
         });
 
         // Apply OpenIddict entity configurations
@@ -128,4 +140,29 @@ public class TenantRecord
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
+}
+
+public class EmailOutboxMessage
+{
+    public Guid Id { get; set; }
+    public string ToEmail { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string Status { get; set; } = EmailOutboxStatus.Pending;
+    public int Attempts { get; set; }
+    public string? LastError { get; set; }
+
+    // DateTime (UTC), not DateTimeOffset: the SQLite provider can't translate
+    // relational (<=, >=) comparisons on DateTimeOffset columns, only equality,
+    // and the dispatcher needs a "NextAttemptAt <= now" range query.
+    public DateTime CreatedAt { get; set; }
+    public DateTime NextAttemptAt { get; set; }
+    public DateTime? SentAt { get; set; }
+}
+
+public static class EmailOutboxStatus
+{
+    public const string Pending = "Pending";
+    public const string Sent = "Sent";
+    public const string Failed = "Failed";
 }

@@ -77,4 +77,13 @@ public sealed class AccountController(
         var result = await userService.ResetPasswordAsync(request);
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
+
+    // ─── Email Confirmation ───────────────────────────────────────────────────
+
+    [HttpGet("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail([FromQuery] string email, [FromQuery] string token)
+    {
+        var result = await userService.ConfirmEmailAsync(email, token);
+        return result.IsSuccess ? Ok(new { message = "Email confirmed." }) : BadRequest(new { error = result.Error });
+    }
 }

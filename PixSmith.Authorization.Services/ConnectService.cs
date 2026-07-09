@@ -39,9 +39,9 @@ public sealed class ConnectService(
 
         if (result.Succeeded) return Result.Success();
 
-        return Result.Failure(result.IsLockedOut
-            ? "Account is locked out."
-            : "Invalid credentials.");
+        if (result.IsLockedOut) return Result.Failure("Account is locked out.");
+        if (result.IsNotAllowed) return Result.Failure("Please confirm your email address before signing in.");
+        return Result.Failure("Invalid credentials.");
     }
 
     // ── Identity building ─────────────────────────────────────────────────────

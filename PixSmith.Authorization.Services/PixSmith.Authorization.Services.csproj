@@ -13,4 +13,8 @@
     <ProjectReference Include="..\src\AuthServer\AuthServer.Infrastructure\PixSmith.Authorization.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.17.0" />
+  </ItemGroup>
+
 </Project>

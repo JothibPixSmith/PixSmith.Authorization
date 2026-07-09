@@ -87,7 +87,7 @@ public static class InfrastructureServiceExtensions
 			options.Lockout.MaxFailedAccessAttempts  = lockout.GetValue<int>("MaxFailedAccessAttempts", 5);
 			options.Lockout.DefaultLockoutTimeSpan   = TimeSpan.FromMinutes(lockout.GetValue<int>("DefaultLockoutTimeSpanMinutes", 15));
 			options.User.RequireUniqueEmail          = true;
-			options.SignIn.RequireConfirmedEmail      = false;
+			options.SignIn.RequireConfirmedEmail      = true;
 		})
 		.AddEntityFrameworkStores<ApplicationDbContext>()
 		.AddDefaultTokenProviders();
@@ -196,6 +196,13 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IOAuthClientRepository, OAuthClientRepository>();
 		services.AddTransient<IUserRepository, UserRepository>();
 		services.AddTransient<ITenantRepository, TenantRepository>();
+
+		// ─── Email ────────────────────────────────────────────
+
+		services.Configure<EmailOptions>(configuration.GetSection("Email"));
+		services.AddTransient<ISmtpSender, MailKitSmtpSender>();
+		services.AddTransient<IEmailOutbox, EmailOutbox>();
+		services.AddHostedService<EmailOutboxDispatcher>();
 
 		// ─── Services ───────────────────────────────────────
 

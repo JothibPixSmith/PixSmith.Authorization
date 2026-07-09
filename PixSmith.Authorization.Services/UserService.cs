@@ -1,5 +1,7 @@
 ﻿using PixSmith.Authorization.Domain.Entities;
 using PixSmith.Authorization.Domain.Results;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Repositories.Interfaces;
@@ -33,17 +35,23 @@ public sealed class UserService : IUserService
 	private readonly IUserRepository repository;
 	private readonly IPasswordHashingService passwordHashingService;
 	private readonly IEmailService emailService;
+	private readonly UserManager<IdentityUser<Guid>> userManager;
+	private readonly string frontendBaseUri;
 	private readonly ILogger<UserService> logger;
 
 	public UserService(
 	IUserRepository repository,
 	IPasswordHashingService passwordHashingService,
 	IEmailService emailService,
+	UserManager<IdentityUser<Guid>> userManager,
+	IConfiguration configuration,
 	ILogger<UserService> logger)
 	{
 		this.repository = repository;
 		this.passwordHashingService = passwordHashingService;
 		this.emailService = emailService;
+		this.userManager = userManager;
+		this.frontendBaseUri = (configuration["OpenIddict:BlazorClient:BaseUri"] ?? string.Empty).TrimEnd('/');
 		this.logger = logger;
 	}
 
@@ -63,7 +71,8 @@ public sealed class UserService : IUserService
 
 		logger.LogInformation("New user registered: {Email}", request.Email);
 
-		await this.emailService.SendEmailConfirmationAsync(user.Email, "link-here", ct);
+		// The confirmation email is sent by AccountService once the IdentityUser (and its
+		// password/security stamp, needed to generate a valid confirmation token) exists.
 
 		return Result<UserDto>.Success(MapToDto(user));
 	}
@@ -134,28 +143,46 @@ public sealed class UserService : IUserService
 
 	public async Task<Result> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default)
 	{
-		var user = await this.repository.GetByEmailAsync(request.Email, ct);
-		// Always return success to prevent email enumeration
-		if (user is null) return Result.Success();
-
-		// In production: generate token, store it, send email
-		// var token = GenerateResetToken();
-		// await emailService.SendPasswordResetAsync(user.Email, $"/reset-password?token={token}", ct);
-
 		logger.LogInformation("Password reset requested for {Email}", request.Email);
+
+		var identityUser = await this.userManager.FindByEmailAsync(request.Email);
+
+		// Always return success regardless of outcome, to prevent email enumeration.
+		if (identityUser is null || !await this.userManager.IsEmailConfirmedAsync(identityUser))
+			return Result.Success();
+
+		var token = await this.userManager.GeneratePasswordResetTokenAsync(identityUser);
+		var link = $"{this.frontendBaseUri}/reset-password?email={Uri.EscapeDataString(request.Email)}&token={Uri.EscapeDataString(token)}";
+
+		await this.emailService.SendPasswordResetAsync(request.Email, link, ct);
+
 		return Result.Success();
 	}
 
-	public Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
+	public async Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
 	{
-		// In production: validate token, update password
-		return Task.FromResult(Result.Success());
+		if (request.NewPassword != request.ConfirmNewPassword)
+			return Result.Failure("Passwords do not match.");
+
+		var identityUser = await this.userManager.FindByEmailAsync(request.Email);
+		if (identityUser is null) return Result.Failure("Invalid or expired reset request.");
+
+		var result = await this.userManager.ResetPasswordAsync(identityUser, request.Token, request.NewPassword);
+		if (!result.Succeeded)
+			return Result.Failure(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+		return Result.Success();
 	}
 
-	public Task<Result> ConfirmEmailAsync(string email, string token, CancellationToken ct = default)
+	public async Task<Result> ConfirmEmailAsync(string email, string token, CancellationToken ct = default)
 	{
-		// In production: validate token and mark email as confirmed
-		return Task.FromResult(Result.Success());
+		var identityUser = await this.userManager.FindByEmailAsync(email);
+		if (identityUser is null) return Result.Failure("Invalid or expired confirmation link.");
+
+		var result = await this.userManager.ConfirmEmailAsync(identityUser, token);
+		return result.Succeeded
+			? Result.Success()
+			: Result.Failure("Invalid or expired confirmation link.");
 	}
 
 	public async Task<Result> AssignRoleAsync(Guid userId, string role, CancellationToken ct = default)

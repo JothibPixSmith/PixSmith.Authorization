@@ -1,4 +1,5 @@
 ﻿using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace PixSmith.Authorization.BlazorClient.Services;
 
@@ -328,12 +329,68 @@ public sealed class TenantApiService(HttpClient http) : ITenantApiService
 public interface IAccountApiService
 {
     Task<UserModel?> GetCurrentUserAsync();
+    Task<string?> RegisterAsync(string username, string email, string password, string confirmPassword,
+        string? firstName, string? lastName);
+    Task<string?> ForgotPasswordAsync(string email);
+    Task<string?> ResetPasswordAsync(string email, string token, string newPassword, string confirmNewPassword);
+    Task<string?> ConfirmEmailAsync(string email, string token);
 }
 
 public sealed class AccountApiService(HttpClient http) : IAccountApiService
 {
     public async Task<UserModel?> GetCurrentUserAsync() =>
         await http.GetFromJsonAsync<UserModel>("api/account/me");
+
+    // These all return null on success, or a human-readable error message on failure —
+    // same convention as JwtAuthStateProvider.LoginAsync.
+
+    public async Task<string?> RegisterAsync(string username, string email, string password, string confirmPassword,
+        string? firstName, string? lastName)
+    {
+        var response = await http.PostAsJsonAsync("api/account/register", new
+        {
+            username,
+            email,
+            password,
+            confirmPassword,
+            firstName,
+            lastName,
+        });
+        return response.IsSuccessStatusCode ? null : await ReadErrorAsync(response);
+    }
+
+    public async Task<string?> ForgotPasswordAsync(string email)
+    {
+        var response = await http.PostAsJsonAsync("api/account/forgot-password", new { email });
+        return response.IsSuccessStatusCode ? null : await ReadErrorAsync(response);
+    }
+
+    public async Task<string?> ResetPasswordAsync(string email, string token, string newPassword, string confirmNewPassword)
+    {
+        var response = await http.PostAsJsonAsync("api/account/reset-password",
+            new { email, token, newPassword, confirmNewPassword });
+        return response.IsSuccessStatusCode ? null : await ReadErrorAsync(response);
+    }
+
+    public async Task<string?> ConfirmEmailAsync(string email, string token)
+    {
+        var response = await http.GetAsync(
+            $"api/account/confirm-email?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(token)}");
+        return response.IsSuccessStatusCode ? null : await ReadErrorAsync(response);
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var doc = await response.Content.ReadFromJsonAsync<JsonElement>();
+            if (doc.TryGetProperty("error", out var e))
+                return e.GetString() ?? "Request failed.";
+        }
+        catch { /* body wasn't JSON — fall through to the generic message */ }
+
+        return "Request failed.";
+    }
 }
 
 // Extension to convert HttpResponseMessage Task to void Task

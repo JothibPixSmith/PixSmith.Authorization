@@ -77,6 +77,16 @@ Open the URL printed in the terminal (default `https://localhost:7100`) and sign
 
 > After the first successful login, go to **Profile** and change the admin password. For production, remove the `AdminSeed:*` values from `.env.production` after first boot — the seeder is a no-op once the user exists.
 
+### 4. (Optional) Run Mailpit to catch outgoing email
+
+Registration confirmation and password-reset emails are sent via SMTP, queued through an outbox and dispatched by a background service (`EmailOutboxDispatcher`) so a slow/unreachable mail server never blocks a request. `appsettings.json` defaults `Email:Smtp` to [Mailpit](https://mailpit.axllent.org/) (`localhost:1025`, no auth) so this works out of the box in dev:
+
+```powershell
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+View sent mail at `http://localhost:8025`. For production, override `Email:Smtp:Host/Port/Username/Password` via environment variables or `dotnet user-secrets` — same pattern as the Google/Microsoft OAuth credentials, not `appsettings.json`.
+
 ---
 
 ## setup.json Reference

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
@@ -21,6 +22,7 @@ public sealed class AdminUserSeeder(
         var userService    = scope.ServiceProvider.GetRequiredService<IUserService>();
         var accountService = scope.ServiceProvider.GetRequiredService<IAccountService>();
         var adminService   = scope.ServiceProvider.GetRequiredService<IAdminService>();
+        var userManager    = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser<Guid>>>();
 
         // Only ever seed on a brand-new instance. Once any user exists, the seed config
         // (often left in plaintext env vars / user-secrets) must never be able to create
@@ -60,6 +62,17 @@ public sealed class AdminUserSeeder(
             throw new InvalidOperationException(
                 $"Admin user {email} was created but role assignment failed: {roleResult.Error}. " +
                 "Fix the issue and restart — startup is blocked to avoid running with a broken admin account.");
+
+        // Confirm the seeded admin's email directly rather than waiting on the confirmation
+        // email: RequireConfirmedEmail=true would otherwise lock out the only admin account
+        // on first boot if SMTP isn't configured/reachable yet. The seeder is itself the
+        // trusted bootstrap authority, so this isn't bypassing anything a real user relies on.
+        var identityUser = await userManager.FindByIdAsync(result.Value.Id.ToString());
+        if (identityUser is not null && !identityUser.EmailConfirmed)
+        {
+            identityUser.EmailConfirmed = true;
+            await userManager.UpdateAsync(identityUser);
+        }
 
         logger.LogInformation("Initial admin user {Email} created and assigned Admin role.", email);
     }

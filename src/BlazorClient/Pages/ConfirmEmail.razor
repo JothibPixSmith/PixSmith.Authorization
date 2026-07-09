@@ -1,0 +1,54 @@
+@page "/confirm-email"
+@inject IAccountApiService AccountApi
+
+<PageTitle>Confirm Email - AuthServer</PageTitle>
+
+<div class="min-h-[70vh] flex items-center justify-center">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 w-full max-w-sm space-y-6 text-center">
+
+        @if (_loading)
+        {
+            <p class="text-sm text-gray-500">Confirming your email…</p>
+        }
+        else if (_success)
+        {
+            <div class="text-4xl">✅</div>
+            <h1 class="text-2xl font-bold text-gray-800">Email confirmed</h1>
+            <a href="/login" class="block text-center text-sm text-blue-600 hover:underline">Sign in</a>
+        }
+        else
+        {
+            <div class="text-4xl">⚠️</div>
+            <h1 class="text-2xl font-bold text-gray-800">Confirmation failed</h1>
+            <p class="text-sm text-gray-500">@_error</p>
+            <a href="/login" class="block text-center text-sm text-blue-600 hover:underline">Back to sign in</a>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Token { get; set; }
+
+    private bool _loading = true;
+    private bool _success;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(Email) || string.IsNullOrEmpty(Token))
+        {
+            _loading = false;
+            _error = "This confirmation link is invalid or incomplete.";
+            return;
+        }
+
+        var error = await AccountApi.ConfirmEmailAsync(Email, Token);
+        _success = error is null;
+        _error = error;
+        _loading = false;
+    }
+}

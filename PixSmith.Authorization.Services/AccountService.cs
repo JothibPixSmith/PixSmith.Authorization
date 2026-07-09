@@ -1,5 +1,6 @@
 ﻿using PixSmith.Authorization.Domain.Results;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services.Interfaces;
@@ -9,6 +10,8 @@ namespace PixSmith.Authorization.Services;
 public sealed class AccountService(
     IUserService userService,
     UserManager<IdentityUser<Guid>> userManager,
+    IEmailService emailService,
+    IConfiguration configuration,
     ILogger<AccountService> logger) : IAccountService
 {
     public async Task<Result<UserDto>> RegisterAsync(
@@ -36,6 +39,13 @@ public sealed class AccountService(
         }
 
         await userManager.AddToRoleAsync(identityUser, "User");
+
+        // Token requires the IdentityUser (security stamp) to exist, so this can only
+        // happen here, after CreateAsync succeeds - not in UserService.RegisterAsync.
+        var token = await userManager.GenerateEmailConfirmationTokenAsync(identityUser);
+        var baseUri = (configuration["OpenIddict:BlazorClient:BaseUri"] ?? string.Empty).TrimEnd('/');
+        var link = $"{baseUri}/confirm-email?email={Uri.EscapeDataString(request.Email)}&token={Uri.EscapeDataString(token)}";
+        await emailService.SendEmailConfirmationAsync(request.Email, link, ct);
 
         logger.LogInformation("Registered user {Email}", request.Email);
         return Result<UserDto>.Success(dto);
