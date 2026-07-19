@@ -1,9 +1,9 @@
 namespace PixSmith.Authorization.UITests.Support;
 
 /// <summary>
-/// This layer drives the real, already-running AuthServer + Blazor client (there is no
-/// in-process host like the integration tests use) — start both before running these
-/// scenarios, or point UITEST_BASE_URL at wherever they're deployed.
+/// TestServerHooks auto-starts AuthServer.API at this URL if nothing's already listening there,
+/// so scenarios normally need no manual setup. Point UITEST_BASE_URL elsewhere to run against
+/// an already-running instance (local F5 debugging, a deployed environment, etc.) instead.
 /// </summary>
 public static class TestSettings
 {

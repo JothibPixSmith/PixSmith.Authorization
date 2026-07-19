@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir *)"
+      "Bash(dir *)",
+      "Bash(dotnet --version)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(dotnet package *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet build *)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(ASPNETCORE_ENVIRONMENT=Development Database__Provider=Sqlite ConnectionStrings__DefaultConnection=\"Data Source=uitest.db\" dotnet run --no-launch-profile --urls \"https://localhost:7100;http://localhost:7101\")",
+      "Bash(echo \"Started with PID $!\")",
+      "Bash(ps -W)"
     ]
   }
 }

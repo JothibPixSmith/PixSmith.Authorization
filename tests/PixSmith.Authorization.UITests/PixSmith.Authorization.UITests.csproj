@@ -15,8 +15,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="SpecFlow.xUnit" Version="3.9.74" />
-    <PackageReference Include="SpecFlow.Tools.MsBuild.Generation" Version="3.9.74" />
+    <PackageReference Include="Reqnroll.xUnit" Version="3.3.4" />
+    <PackageReference Include="Reqnroll.Tools.MsBuild.Generation" Version="3.3.4" />
     <PackageReference Include="Selenium.WebDriver" Version="4.*" />
     <PackageReference Include="Selenium.Support" Version="4.*" />
     <PackageReference Include="coverlet.collector" Version="6.*">
@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="specflow.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="reqnroll.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

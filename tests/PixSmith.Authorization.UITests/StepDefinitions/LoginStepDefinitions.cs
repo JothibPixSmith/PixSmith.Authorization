@@ -1,7 +1,7 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using PixSmith.Authorization.UITests.Support;
-using TechTalk.SpecFlow;
+using Reqnroll;
 using Xunit;
 
 namespace PixSmith.Authorization.UITests.StepDefinitions;

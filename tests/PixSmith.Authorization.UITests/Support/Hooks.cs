@@ -1,6 +1,6 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
-using TechTalk.SpecFlow;
+using Reqnroll;
 
 namespace PixSmith.Authorization.UITests.Support;
 
@@ -25,7 +25,9 @@ public sealed class Hooks
 
         var driver = new ChromeDriver(options);
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(2);
-        scenarioContext.Set(driver);
+        // Must be set under the IWebDriver key explicitly: Set(driver) would infer the
+        // compile-time type ChromeDriver, which Get<IWebDriver>() in step definitions can't find.
+        scenarioContext.Set<IWebDriver>(driver);
     }
 
     [AfterScenario]
