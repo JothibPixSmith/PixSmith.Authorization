@@ -422,3 +422,6 @@ FodyWeavers.xsd
 setup.json
 .env.production
 .env.*
+
+# SpecFlow build-time generated code-behind
+*.feature.cs
