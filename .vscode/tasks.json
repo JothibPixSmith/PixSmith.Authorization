@@ -15,12 +15,12 @@
       "group": "build"
     },
     {
-      "label": "build: BlazorClient.Server",
+      "label": "build: BlazorClient",
       "command": "dotnet",
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/src/BlazorClient.Server/PixSmith.Authorization.BlazorClient.Server.csproj",
+        "${workspaceFolder}/src/BlazorClient/PixSmith.Authorization.BlazorClient.csproj",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary;ForceNoAlign"
       ],

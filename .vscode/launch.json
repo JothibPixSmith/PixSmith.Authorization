@@ -16,33 +16,21 @@
       },
       "env": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      },
-      "sourceFileMap": {
-        "/Views": "${workspaceFolder}/Views"
       }
     },
     {
-      "name": "Blazor Client Server",
-      "type": "coreclr",
+      "name": "Blazor Client (WASM)",
+      "type": "blazorwasm",
       "request": "launch",
-      "preLaunchTask": "build: BlazorClient.Server",
-      "program": "${workspaceFolder}/src/BlazorClient.Server/bin/Debug/net10.0/PixSmith.Authorization.BlazorClient.Server.dll",
-      "args": [],
-      "cwd": "${workspaceFolder}/src/BlazorClient.Server",
-      "stopAtEntry": false,
-      "serverReadyAction": {
-        "action": "openExternally",
-        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
-      },
-      "env": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
-      }
+      "preLaunchTask": "build: BlazorClient",
+      "cwd": "${workspaceFolder}/src/BlazorClient",
+      "url": "https://localhost:7200"
     }
   ],
   "compounds": [
     {
-      "name": "Auth Server + Blazor Client",
-      "configurations": ["Auth Server (API)", "Blazor Client Server"],
+      "name": "Full Stack (API + Blazor)",
+      "configurations": ["Auth Server (API)", "Blazor Client (WASM)"],
       "stopAll": true
     }
   ]

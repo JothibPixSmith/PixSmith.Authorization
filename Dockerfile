@@ -9,7 +9,6 @@ COPY src/AuthServer/AuthServer.Domain/PixSmith.Authorization.Domain.csproj      
 COPY src/AuthServer/AuthServer.Infrastructure/PixSmith.Authorization.Infrastructure.csproj   src/AuthServer/AuthServer.Infrastructure/
 COPY src/AuthServer/AuthServer.Application/PixSmith.Authorization.Application.csproj         src/AuthServer/AuthServer.Application/
 COPY src/BlazorClient/PixSmith.Authorization.BlazorClient.csproj                             src/BlazorClient/
-COPY src/BlazorClient.Server/PixSmith.Authorization.BlazorClient.Server.csproj               src/BlazorClient.Server/
 COPY PixSmith.Authorization.DataContext/PixSmith.Authorization.DataContext.csproj            PixSmith.Authorization.DataContext/
 COPY PixSmith.Authorization.Repositories/PixSmith.Authorization.Repositories.csproj          PixSmith.Authorization.Repositories/
 COPY PixSmith.Authorization.Services/PixSmith.Authorization.Services.csproj                  PixSmith.Authorization.Services/
