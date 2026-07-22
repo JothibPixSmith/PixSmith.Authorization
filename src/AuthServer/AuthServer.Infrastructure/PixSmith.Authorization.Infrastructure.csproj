@@ -33,6 +33,13 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.MicrosoftAccount" Version="10.*" />
 
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.*" />
+
+    <!-- Transitive pins for packages flagged by NU1903. Both arrive via packages above
+         (DataProtection/OpenIddict and Microsoft.Data.Sqlite) that still resolve vulnerable
+         versions; these flow on to every project referencing Infrastructure. Drop once the
+         parent packages pull patched versions themselves. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.*" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
 
 </Project>
