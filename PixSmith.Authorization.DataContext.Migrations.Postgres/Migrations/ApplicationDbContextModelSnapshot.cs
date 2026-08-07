@@ -17,7 +17,7 @@ namespace PixSmith.Authorization.DataContext.Migrations.Postgres.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -586,6 +586,43 @@ namespace PixSmith.Authorization.DataContext.Migrations.Postgres.Migrations
                         .IsUnique();
 
                     b.ToTable("OAuthClientRegistrations");
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.ProvisioningNonce", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Nonce")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SignedBy")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nonce")
+                        .IsUnique();
+
+                    b.HasIndex("UsedAt");
+
+                    b.ToTable("ProvisioningNonces");
                 });
 
             modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantRecord", b =>

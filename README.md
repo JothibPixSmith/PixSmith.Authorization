@@ -205,6 +205,13 @@ The Blazor WASM client at `/admin` (requires the **Admin** role) provides:
 | `blazor-client` | Public | Authorization Code + PKCE, Password, Refresh Token | Blazor WASM frontend |
 | `m2m-client` | Confidential | Client Credentials | Machine-to-machine API access |
 
+To connect an application of your own — registering it, validating its tokens, and driving
+permissions from the claims — see **[INTEGRATION.md](INTEGRATION.md)**.
+
+Tenant creation is deliberately not automatable: it requires an interactive human administrator
+plus a quorum of offline operator signatures. See
+**[docs/TENANT-PROVISIONING.md](docs/TENANT-PROVISIONING.md)**.
+
 ---
 
 ## Architecture

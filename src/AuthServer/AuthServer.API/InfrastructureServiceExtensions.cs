@@ -1,5 +1,6 @@
 ﻿using PixSmith.Authorization.Infrastructure.OpenIddict;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -92,6 +93,25 @@ public static class InfrastructureServiceExtensions
 		.AddEntityFrameworkStores<ApplicationDbContext>()
 		.AddDefaultTokenProviders();
 
+		// The application cookie is the shared SSO session. /connect/authorize challenges
+		// this scheme, so LoginPath must point at the server-rendered login page —
+		// Identity's default (/Account/Login as a Razor Page) does not exist in this app.
+		services.ConfigureApplicationCookie(options =>
+		{
+			options.LoginPath        = "/Account/Login";
+			options.LogoutPath       = "/Account/Logout";
+			options.AccessDeniedPath = "/Account/AccessDenied";
+			options.ExpireTimeSpan   = TimeSpan.FromHours(8);
+			options.SlidingExpiration = true;
+
+			// Lax (the default) is required, not Strict: the browser arrives at
+			// /connect/authorize as a cross-site redirect from the client app and the
+			// cookie must be sent on that top-level GET or SSO silently fails.
+			options.Cookie.SameSite = SameSiteMode.Lax;
+			options.Cookie.HttpOnly = true;
+			options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+		});
+
 		// ─── OpenIddict ────────────────────────────────────────────────────
 
 		services.AddOpenIddict()
@@ -118,6 +138,12 @@ public static class InfrastructureServiceExtensions
 					   .AllowPasswordFlow()
 					   .AllowRefreshTokenFlow()
 					   .RequireProofKeyForCodeExchange();
+
+				// Issue access tokens as plain signed JWTs rather than encrypted JWEs.
+				// Required for external resource servers: they validate tokens against
+				// /.well-known/jwks and cannot decrypt a JWE. ID tokens are signed-only
+				// either way, and refresh/authorization codes stay encrypted.
+				options.DisableAccessTokenEncryption();
 
 				// Supported scopes
 				options.RegisterScopes(
@@ -205,6 +231,15 @@ public static class InfrastructureServiceExtensions
 		services.AddHostedService<EmailOutboxDispatcher>();
 
 		// ─── Services ───────────────────────────────────────
+
+		// ─── Tenant Provisioning ────────────────────────────────
+		// Public keys are bound from configuration only. See TenantProvisioningOptions for
+		// why they must never be sourced from the database this control protects.
+
+		services.Configure<TenantProvisioningOptions>(
+			configuration.GetSection(TenantProvisioningOptions.SectionName));
+		services.TryAddSingleton(TimeProvider.System);
+		services.AddScoped<IProvisioningAuthorizer, ProvisioningAuthorizer>();
 
 		services.AddTransient<IPasswordHashingService, PasswordHashingService>();
 		services.AddTransient<IEmailService, EmailService>();

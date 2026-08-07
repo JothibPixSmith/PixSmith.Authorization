@@ -1,0 +1,21 @@
+@*
+    Layout for the server-rendered auth pages (login, access denied).
+    Uses the same Tailwind CDN as the Blazor admin UI so the hosted login
+    page matches the rest of the product without a build pipeline.
+*@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@(ViewData["Title"] ?? "Sign In") - AuthServer</title>
+    <base href="/" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="~/favicon.png" />
+</head>
+<body class="bg-gray-50">
+    <main class="min-h-screen flex items-center justify-center px-4">
+        @RenderBody()
+    </main>
+</body>
+</html>

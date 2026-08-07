@@ -16,6 +16,9 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Moq" Version="4.*" />
+    <!-- Real SQLite (in-memory) so the unique-index replay defence is exercised, not mocked. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.*" />
     <PackageReference Include="FluentAssertions" Version="6.*" />
     <PackageReference Include="coverlet.collector" Version="6.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -25,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
+    <ProjectReference Include="..\..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
   </ItemGroup>
 
 </Project>

@@ -12,7 +12,17 @@
       "Bash(git restore *)",
       "Bash(ASPNETCORE_ENVIRONMENT=Development Database__Provider=Sqlite ConnectionStrings__DefaultConnection=\"Data Source=uitest.db\" dotnet run --no-launch-profile --urls \"https://localhost:7100;http://localhost:7101\")",
       "Bash(echo \"Started with PID $!\")",
-      "Bash(ps -W)"
+      "Bash(ps -W)",
+      "Bash(curl -sk -X POST https://localhost:7199/connect/token -d grant_type=client_credentials -d client_id=m2m-client -d client_secret=m2m-super-secret-change-in-production -d scope=api -o /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/m2m.json -w 'status=%{http_code}\\\\n')",
+      "Bash(python3 -c ' *)",
+      "Bash(sed -i 's|<Nullable>enable</Nullable>|<Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>|' /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/cryptocheck/cryptocheck.csproj)",
+      "Bash(dotnet run *)",
+      "Bash(Database__Provider=Sqlite ConnectionStrings__DefaultConnection=\"Data Source=migrate.db\" dotnet ef migrations add AddProvisioningNonces --project ../../../PixSmith.Authorization.DataContext.Migrations.Sqlite --startup-project . --no-build)",
+      "Bash(curl -sk -X POST https://localhost:7199/api/admin/oidc-apps -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(curl -sk -X POST https://localhost:7199/connect/token -d grant_type=client_credentials -d client_id=rogue-service -d client_secret=rogue-secret-123 -d 'scope=admin api' -o /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-token.json)",
+      "Bash(curl -sk https://localhost:7199/api/admin/tenants -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -w '  [GET tenants: %{http_code}]\\\\n' -o /dev/null)",
+      "Bash(curl -sk -X POST https://localhost:7199/api/admin/tenants -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' --data-binary @/tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/body.json -w '  [POST tenants: %{http_code}]\\\\n' -o /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-create.json)",
+      "Bash(python3 -c 'import json;d=json.load\\(open\\('\\\\''/tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-create.json'\\\\''\\)\\);print\\('\\\\''  '\\\\'',d.get\\('\\\\''title'\\\\''\\),'\\\\''—'\\\\'',d.get\\('\\\\''detail'\\\\''\\)\\)')"
     ]
   }
 }

@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using PixSmith.Authorization.API.Security;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
@@ -262,8 +263,18 @@ public sealed class AdminController(
         return result.IsSuccess ? Ok(result.Value) : NotFound();
     }
 
+    // Every mutating tenant operation below is gated on an offline signature quorum plus an
+    // interactive human administrator. Read operations are not — listing tenants is not a
+    // way to gain control of the registry, and gating it would make the control unusable.
+    //
+    // Delete and deactivate are gated alongside create deliberately: an attacker who can
+    // delete a tenancy and recreate it under their own control has taken over the registry
+    // just as effectively as one who can create at will.
+
     [HttpPost("tenants")]
+    [RequireProvisioningSignature]
     [ProducesResponseType(typeof(TenantDto), 201)]
+    [ProducesResponseType(typeof(ProblemDetails), 403)]
     public async Task<IActionResult> CreateTenant([FromBody] CreateTenantRequest request)
     {
         var result = await tenantService.CreateAsync(request);
@@ -272,6 +283,7 @@ public sealed class AdminController(
     }
 
     [HttpPut("tenants/{id:guid}")]
+    [RequireProvisioningSignature]
     public async Task<IActionResult> UpdateTenant(Guid id, [FromBody] UpdateTenantRequest request)
     {
         var result = await tenantService.UpdateAsync(id, request);
@@ -279,6 +291,7 @@ public sealed class AdminController(
     }
 
     [HttpPost("tenants/{id:guid}/activate")]
+    [RequireProvisioningSignature]
     public async Task<IActionResult> ActivateTenant(Guid id)
     {
         var result = await tenantService.ActivateAsync(id);
@@ -286,6 +299,7 @@ public sealed class AdminController(
     }
 
     [HttpPost("tenants/{id:guid}/deactivate")]
+    [RequireProvisioningSignature]
     public async Task<IActionResult> DeactivateTenant(Guid id)
     {
         var result = await tenantService.DeactivateAsync(id);
@@ -293,6 +307,7 @@ public sealed class AdminController(
     }
 
     [HttpDelete("tenants/{id:guid}")]
+    [RequireProvisioningSignature]
     public async Task<IActionResult> DeleteTenant(Guid id)
     {
         var result = await tenantService.DeleteAsync(id);

@@ -22,8 +22,9 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddHostedService<AdminUserSeeder>(); // runs after OpenIddictSeeder (registration order)
 
 
-// Controllers + Swagger
-builder.Services.AddControllers();
+// Controllers + Swagger.
+// Views are needed for the server-rendered login page that backs /connect/authorize.
+builder.Services.AddControllersWithViews();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

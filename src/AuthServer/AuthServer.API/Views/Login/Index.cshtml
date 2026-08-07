@@ -1,0 +1,46 @@
+@model LoginInputModel
+@{
+    ViewData["Title"] = "Sign In";
+}
+
+<div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 w-full max-w-sm space-y-6">
+
+    <div class="text-center space-y-1">
+        <div class="text-4xl">🔐</div>
+        <h1 class="text-2xl font-bold text-gray-800">Welcome back</h1>
+        <p class="text-sm text-gray-500">Sign in to continue</p>
+    </div>
+
+    <div asp-validation-summary="All"
+         class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 empty:hidden"></div>
+
+    <form method="post" class="space-y-4">
+        <input type="hidden" asp-for="ReturnUrl" />
+
+        <div>
+            <label asp-for="Email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input asp-for="Email" type="email" autocomplete="email" placeholder="you@example.com"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div>
+            <label asp-for="Password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input asp-for="Password" type="password" autocomplete="current-password" placeholder="••••••••"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <label class="flex items-center gap-2 text-sm text-gray-600">
+            <input asp-for="RememberMe" type="checkbox" class="rounded border-gray-300" />
+            Keep me signed in
+        </label>
+
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition">
+            Sign In
+        </button>
+    </form>
+
+    <p class="text-center text-sm text-gray-500">
+        <a href="/forgot-password" class="text-blue-600 hover:underline">Forgot password?</a>
+    </p>
+</div>

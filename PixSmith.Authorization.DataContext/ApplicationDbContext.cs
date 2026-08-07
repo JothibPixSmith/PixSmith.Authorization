@@ -17,6 +17,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<TenantRecord> Tenants => Set<TenantRecord>();
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
+    public DbSet<ProvisioningNonce> ProvisioningNonces => Set<ProvisioningNonce>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -78,6 +79,19 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.HasIndex(x => new { x.Status, x.NextAttemptAt });
         });
 
+        builder.Entity<ProvisioningNonce>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Nonce).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Operation).HasMaxLength(300).IsRequired();
+            e.Property(x => x.SignedBy).HasMaxLength(500).IsRequired();
+            // The uniqueness constraint *is* the replay defence — it must be enforced by
+            // the database, not by a read-then-write check that two concurrent replays
+            // could both pass.
+            e.HasIndex(x => x.Nonce).IsUnique();
+            e.HasIndex(x => x.UsedAt);
+        });
+
         // Apply OpenIddict entity configurations
         builder.UseOpenIddict<Guid>();
     }
@@ -130,6 +144,23 @@ public class AuditLog
     public string? Details { get; set; }
     public string? IpAddress { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
+}
+
+/// <summary>
+/// A single-use nonce consumed by a signed tenant-provisioning request. Rows are only
+/// written once every signature has verified, so a failed attempt cannot burn a nonce.
+/// </summary>
+public class ProvisioningNonce
+{
+    public Guid Id { get; set; }
+    public string Nonce { get; set; } = string.Empty;
+    /// <summary>The HTTP method and path the nonce was spent on, e.g. "POST /api/admin/tenants".</summary>
+    public string Operation { get; set; } = string.Empty;
+    /// <summary>Comma-separated key IDs whose signatures satisfied the quorum.</summary>
+    public string SignedBy { get; set; } = string.Empty;
+    /// <summary>The human operator who submitted the request.</summary>
+    public Guid? UserId { get; set; }
+    public DateTimeOffset UsedAt { get; set; }
 }
 
 public class TenantRecord

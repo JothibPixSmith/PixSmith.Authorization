@@ -14,6 +14,13 @@
         </div>
     </div>
 
+    @if (_pageError is not null)
+    {
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+            @_pageError
+        </div>
+    }
+
     @if (_showCreate)
     {
         <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -103,6 +110,13 @@
     private bool _showCreate;
     private bool _saving;
     private string? _formError;
+    private string? _pageError;
+
+    // Mutating a tenant requires an offline signature quorum that this UI cannot produce —
+    // see INTEGRATION.md. Surface that as an explanation rather than an unhandled exception.
+    private const string ProvisioningHint =
+        "Tenant changes require offline provisioning signatures and cannot be made from this UI. " +
+        "Use the signed provisioning request described in INTEGRATION.md.";
     private CreateTenantFormModel _form = new();
     private TenantModel? _editing;
 
@@ -155,12 +169,26 @@
         }
         catch (Exception ex)
         {
-            _formError = ex.Message;
+            _formError = ProvisioningHint + " (" + ex.Message + ")";
         }
         finally { _saving = false; }
     }
 
-    private async Task DeleteTenant(Guid id) { await TenantApi.DeleteTenantAsync(id); await LoadAsync(); }
-    private async Task ActivateTenant(Guid id) { await TenantApi.ActivateTenantAsync(id); await LoadAsync(); }
-    private async Task DeactivateTenant(Guid id) { await TenantApi.DeactivateTenantAsync(id); await LoadAsync(); }
+    private Task DeleteTenant(Guid id)     => MutateAsync(() => TenantApi.DeleteTenantAsync(id));
+    private Task ActivateTenant(Guid id)   => MutateAsync(() => TenantApi.ActivateTenantAsync(id));
+    private Task DeactivateTenant(Guid id) => MutateAsync(() => TenantApi.DeactivateTenantAsync(id));
+
+    private async Task MutateAsync(Func<Task> action)
+    {
+        _pageError = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _pageError = ProvisioningHint + " (" + ex.Message + ")";
+        }
+    }
 }
