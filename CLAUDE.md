@@ -10,13 +10,19 @@ dotnet restore
 dotnet build OAuthSolution.sln
 
 # Run the auth server (https://localhost:7100)
+# This also serves the Blazor WASM admin UI — one process, one port.
+# The Blazor project is never launched on its own; it has no API to talk to.
 cd src/AuthServer/AuthServer.API && dotnet run
 
-# Run the Blazor WASM client (https://localhost:7200)
-cd src/BlazorClient && dotnet run
+# Tests
+dotnet test tests/PixSmith.Authorization.UnitTests
+dotnet test tests/PixSmith.Authorization.IntegrationTests
+
+# Debug against Postgres in containers (VS Code: F5 -> "Attach to Auth Server (container)")
+./debug/start.sh
 ```
 
-No test projects exist yet. No lint tooling is configured beyond `<Nullable>enable</Nullable>` and `<ImplicitUsings>enable</ImplicitUsings>` in all projects.
+No lint tooling is configured beyond `<Nullable>enable</Nullable>` and `<ImplicitUsings>enable</ImplicitUsings>` in all projects.
 
 ## Architecture
 
@@ -27,7 +33,22 @@ Domain ← Application ← Infrastructure ← API
                                       ← DataContext ← Repositories ← Services
 ```
 
-The `src/AuthServer/` folder contains the server-side projects. `src/BlazorClient/` is a Blazor WASM SPA that acts as an OIDC client consuming the auth server.
+Every project lives under `src/`; tests live under `tests/`. Nothing sits at the repository root.
+
+```
+src/
+├── AuthServer/                                     API, Domain, Infrastructure
+├── BlazorClient/                                   Blazor WASM admin UI, served by the API
+├── PixSmith.Authorization.DataContext/
+├── PixSmith.Authorization.DataContext.Migrations.Sqlite/
+├── PixSmith.Authorization.DataContext.Migrations.Postgres/
+├── PixSmith.Authorization.Repositories/
+└── PixSmith.Authorization.Services/
+```
+
+Note that folder names under `src/AuthServer/` use an `AuthServer.*` prefix while the
+projects inside them are named `PixSmith.Authorization.*` — e.g. `AuthServer.API/`
+contains `PixSmith.Authorization.API.csproj`.
 
 ### Project roles
 

@@ -27,8 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
-    <ProjectReference Include="..\..\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
+    <ProjectReference Include="..\..\src\PixSmith.Authorization.Services\PixSmith.Authorization.Services.csproj" />
+    <ProjectReference Include="..\..\src\PixSmith.Authorization.DataContext\PixSmith.Authorization.DataContext.csproj" />
   </ItemGroup>
 
 </Project>

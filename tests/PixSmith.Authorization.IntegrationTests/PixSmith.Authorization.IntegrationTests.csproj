@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AuthServer\AuthServer.API\PixSmith.Authorization.API.csproj" />
-    <ProjectReference Include="..\..\PixSmith.Authorization.Repositories\PixSmith.Authorization.Repositories.csproj" />
+    <ProjectReference Include="..\..\src\PixSmith.Authorization.Repositories\PixSmith.Authorization.Repositories.csproj" />
   </ItemGroup>
 
 </Project>

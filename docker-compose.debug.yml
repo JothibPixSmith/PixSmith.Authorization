@@ -1,0 +1,29 @@
+# Debug overlay for docker-compose.yml.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
+#
+# Only the differences are declared here — Compose merges this on top of the base
+# file, so the service definition, network, volumes and Postgres dependency are
+# not duplicated and cannot drift out of sync.
+#
+# ./debug/start.sh does the equivalent with plain `docker` commands, for machines
+# without the Compose plugin.
+
+services:
+  authserver:
+    build:
+      # Same Dockerfile, different target — the debug image is compiled from the
+      # identical `build` stage, only with Debug configuration and vsdbg added.
+      target: debug
+      args:
+        BUILD_CONFIGURATION: Debug
+
+    # Fixed name so .vscode/launch.json can pipe into it without a lookup.
+    container_name: pixsmith-authserver-debug
+
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+    # Keeps the container alive if the app process exits, so you can read the
+    # logs instead of chasing a container that vanished.
+    restart: "no"

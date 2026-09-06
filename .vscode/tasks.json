@@ -15,17 +15,25 @@
       "group": "build"
     },
     {
-      "label": "build: BlazorClient",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "build",
-        "${workspaceFolder}/src/BlazorClient/PixSmith.Authorization.BlazorClient.csproj",
-        "/property:GenerateFullPaths=true",
-        "/consoleloggerparameters:NoSummary;ForceNoAlign"
-      ],
-      "problemMatcher": "$msCompile",
-      "group": "build"
+      // Brings up network -> Postgres -> debug image -> auth server, and blocks
+      // until the server is serving HTTP. Used as the preLaunchTask for the
+      // container attach configuration.
+      "label": "debug: start container stack",
+      "type": "shell",
+      "command": "${workspaceFolder}/debug/start.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "debug: stop container stack",
+      "type": "shell",
+      "command": "${workspaceFolder}/debug/stop.sh",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
       "label": "build: solution",

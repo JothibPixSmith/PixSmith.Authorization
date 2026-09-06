@@ -419,9 +419,16 @@ FodyWeavers.xsd
 /src/AuthServer/AuthServer.API/appsettings.Development.json
 
 # Setup script outputs
-setup.json
-.env.production
 .env.*
 
 # SpecFlow build-time generated code-behind
 *.feature.cs
+
+# Docker env template is safe to commit; real .env files are not.
+!docker/.env.example
+
+# Local SQLite development databases. These held dev users, password hashes and
+# OAuth tokens and were previously committed — never track them again.
+*.db
+*.db-shm
+*.db-wal

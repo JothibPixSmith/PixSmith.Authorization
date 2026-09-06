@@ -1,12 +1,15 @@
-**/.vs
-**/.git
-**/.gitignore
-**/bin
-**/obj
+# Keep build context small and stop host build output leaking into the image —
+# stale bin/obj from the host can shadow the container's own restore.
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/node_modules/
+.git/
+.gitignore
+*.db
+*.db-shm
+*.db-wal
+.env
 **/*.user
-**/*.suo
-**/node_modules
-**/.env
-**/auth.db
-**/auth.db-shm
-**/auth.db-wal
+tests/

@@ -165,12 +165,22 @@ public static class InfrastructureServiceExtensions
 						   .AddEphemeralSigningKey();
 				}
 
-				options.UseAspNetCore()
+				var aspNetCore = options.UseAspNetCore()
 					.EnableAuthorizationEndpointPassthrough()
 					.EnableTokenEndpointPassthrough()
 					.EnableUserInfoEndpointPassthrough()
 					.EnableEndSessionEndpointPassthrough()
 					.EnableStatusCodePagesIntegration();
+
+				if (environment.IsDevelopment())
+				{
+					// The debug container serves plain HTTP on 8080; without this every
+					// protocol endpoint returns "This server only accepts HTTPS requests".
+					// Production keeps the requirement — and behind a proxy, the
+					// UseForwardedHeaders call above lets OpenIddict see the original
+					// https scheme, so terminating TLS at the proxy still works.
+					aspNetCore.DisableTransportSecurityRequirement();
+				}
 			})
 			.AddValidation(options =>
 			{

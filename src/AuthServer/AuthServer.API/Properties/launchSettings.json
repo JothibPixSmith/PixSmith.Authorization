@@ -30,7 +30,8 @@
       },
       "publishAllPorts": true,
       "useSSL": true,
-      "dockerfileRunArguments": "--network=local-network"
+      // Must match the network Postgres is on, or Host=postgres will not resolve.
+      "dockerfileRunArguments": "--network=pixsmith-authorization"
     },
     "IIS Express": {
       "commandName": "IISExpress",

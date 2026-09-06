@@ -19,19 +19,32 @@
       }
     },
     {
-      "name": "Blazor Client (WASM)",
-      "type": "blazorwasm",
-      "request": "launch",
-      "preLaunchTask": "build: BlazorClient",
-      "cwd": "${workspaceFolder}/src/BlazorClient",
-      "url": "https://localhost:7200"
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Full Stack (API + Blazor)",
-      "configurations": ["Auth Server (API)", "Blazor Client (WASM)"],
-      "stopAll": true
+      // Starts the whole stack (Postgres + server in containers) via the
+      // preLaunchTask, then attaches automatically — no process picker.
+      //
+      // processId is pinned to 1 because the image uses an exec-form ENTRYPOINT
+      // (["dotnet", "PixSmith.Authorization.API.dll"]), so the app is always PID 1
+      // with no shell wrapper in between. debug/start.sh asserts this before
+      // reporting ready, and fails loudly if it ever stops being true.
+      "name": "Attach to Auth Server (container)",
+      "type": "coreclr",
+      "request": "attach",
+      "preLaunchTask": "debug: start container stack",
+      "processId": "1",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "pixsmith-authserver-debug"],
+        "debuggerPath": "/vsdbg/vsdbg",
+        "pipeCwd": "${workspaceFolder}",
+        "quoteArgs": false
+      },
+      // PDBs record the container build path (/src); map it back to the repo so
+      // breakpoints bind to the files open in the editor.
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      },
+      "justMyCode": true,
+      "requireExactSource": false
     }
   ]
 }

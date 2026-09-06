@@ -7,61 +7,72 @@ An OAuth 2.0 / OIDC authorization server built with **.NET 10**, **OpenIddict**,
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- PowerShell 5.1 or later (built into Windows; available on Linux/macOS via `pwsh`)
+- Docker, if you want the containerised setup (Option A below)
 
 ---
 
 ## First-Time Setup
 
-A setup script handles all configuration, secrets, and the initial admin account in one step.
+Two paths. Pick the one matching how you intend to run it.
 
-### 1. Copy the example config (optional)
+### Option A — Containers (recommended)
 
-```powershell
-Copy-Item setup.example.json setup.json
-# Edit setup.json and fill in your values
+Postgres and the auth server both in Docker. Everything is configured from a single `.env`.
+
+```bash
+cp docker/.env.example .env     # then edit the passwords
+./debug/start.sh                # or: docker compose up --build
 ```
 
-`setup.json` is gitignored. `setup.example.json` is safe to commit — it contains only placeholder values.
+`.env` is gitignored. See [docker/README.md](docker/README.md) for the details and
+[debug/README.md](debug/README.md) for attaching a debugger.
 
-### 2. Run the setup script
+### Option B — Local, no containers
 
-**Interactive (prompts for every value):**
+Non-sensitive settings go in `appsettings.Development.json`; secrets go in `dotnet user-secrets`,
+which stores them outside the repository so they cannot be committed by accident.
 
-```powershell
-.\Setup-Application.ps1
+```bash
+cd src/AuthServer/AuthServer.API
+
+# Generated once — this is the client secret machine-to-machine callers present.
+dotnet user-secrets set "OpenIddict:M2MClient:ClientSecret" "$(openssl rand -base64 32)"
+
+# The initial admin account, created on first startup (see below).
+dotnet user-secrets set "AdminSeed:Email"    "admin@yourcompany.com"
+dotnet user-secrets set "AdminSeed:Username" "admin"
+dotnet user-secrets set "AdminSeed:Password" "Replace@Me1!"
+
+# Optional — external identity providers.
+dotnet user-secrets set "Authentication:Google:ClientId"        "..."
+dotnet user-secrets set "Authentication:Google:ClientSecret"    "..."
+dotnet user-secrets set "Authentication:Microsoft:ClientId"     "..."
+dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "..."
+
+dotnet user-secrets list        # confirm what is set
 ```
 
-**From a pre-filled config file:**
+The admin password must satisfy the Identity policy — 8+ characters with an uppercase letter, a
+digit, and a special character. A password that does not is not a silent failure: startup throws
+with an explicit message naming the policy, because an instance seeded with an unusable admin
+would otherwise have no way to log in.
 
-```powershell
-.\Setup-Application.ps1 -ConfigFile .\setup.json
+Defaults for everything else live in `appsettings.json` and work as-is for local development
+(SQLite at `auth.db`). To point at Postgres instead, override two settings in
+`appsettings.Development.json`:
+
+```json
+{
+  "Database": { "Provider": "Postgres" },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=pixsmith_auth;Username=pixsmith_app;Password=..."
+  }
+}
 ```
 
-**Production target:**
+### Start it
 
-```powershell
-.\Setup-Application.ps1 -ConfigFile .\setup.json -Environment Production
-```
-
-The script will:
-
-| Step | What happens |
-|---|---|
-| Prerequisites | Verifies .NET SDK and solution structure |
-| Application URL | Sets the base URI used by the OIDC client and token issuer |
-| Database | Configures the connection string (SQLite by default) |
-| OIDC Client IDs | Sets the Blazor and M2M client identifiers |
-| M2M Client Secret | Auto-generates a secret or accepts a custom one |
-| Initial Admin Account | Collects email, username, and password (validated against the Identity policy) |
-| External OAuth Providers | Optional Google / Microsoft credentials |
-| Configuration write | Writes non-sensitive settings to `appsettings.{Environment}.json` |
-| Secrets | **Development:** `dotnet user-secrets` — **Production:** `.env.production` (gitignored) |
-| `.gitignore` | Adds `setup.json`, `.env.production`, `.env.*` if not already present |
-
-### 3. Start the application
-
-```powershell
+```bash
 dotnet run --project src/AuthServer/AuthServer.API
 ```
 
@@ -70,14 +81,23 @@ On first startup the application:
 1. Applies EF Core migrations (creates the database if it does not exist)
 2. Seeds the "Admin" and "User" Identity roles
 3. Seeds the two default OpenIddict clients (`blazor-client`, `m2m-client`)
-4. Creates the initial admin user from the `AdminSeed:*` configuration values
-5. Serves the Blazor WASM client at the same origin
+4. Creates the initial admin user from the `AdminSeed:*` values — **only when no users exist at
+   all**, so these settings can never be used to mint extra accounts on a live system
+5. Serves the Blazor WASM admin UI at the same origin
 
-Open the URL printed in the terminal (default `https://localhost:7100`) and sign in with the admin account you configured.
+Open the URL printed in the terminal (default `https://localhost:7100`) and sign in.
 
-> After the first successful login, go to **Profile** and change the admin password. For production, remove the `AdminSeed:*` values from `.env.production` after first boot — the seeder is a no-op once the user exists.
+> Change the admin password after the first login. Once the user exists the seeder is a no-op, so
+> the `AdminSeed:*` values are safe to remove.
 
-### 4. (Optional) Run Mailpit to catch outgoing email
+### Provisioning keys
+
+Creating a tenancy additionally requires a quorum of offline operator signatures, and the server
+**refuses to provision until they are configured** — this is deliberate, not a misconfiguration.
+Generate the keypairs with `tools/provision-keygen.sh` and enrol the public halves; the full
+procedure is in [docs/TENANT-PROVISIONING.md](docs/TENANT-PROVISIONING.md).
+
+### Catching outgoing email in development
 
 Registration confirmation and password-reset emails are sent via SMTP, queued through an outbox and dispatched by a background service (`EmailOutboxDispatcher`) so a slow/unreachable mail server never blocks a request. `appsettings.json` defaults `Email:Smtp` to [Mailpit](https://mailpit.axllent.org/) (`localhost:1025`, no auth) so this works out of the box in dev:
 
@@ -86,31 +106,6 @@ docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
 ```
 
 View sent mail at `http://localhost:8025`. For production, override `Email:Smtp:Host/Port/Username/Password` via environment variables or `dotnet user-secrets` — same pattern as the Google/Microsoft OAuth credentials, not `appsettings.json`.
-
----
-
-## setup.json Reference
-
-```json
-{
-  "Environment":        "Development",
-  "BaseUri":            "https://localhost:7100",
-  "ConnectionString":   "Data Source=auth.db",
-  "DataProtectionPath": "",
-  "BlazorClientId":     "blazor-client",
-  "M2MClientId":        "m2m-client",
-  "M2MClientSecret":    "replace-with-a-strong-secret",
-  "AdminEmail":         "admin@yourcompany.com",
-  "AdminUsername":      "admin",
-  "AdminPassword":      "Replace@Me1!",
-  "GoogleClientId":     "",
-  "GoogleClientSecret": "",
-  "MicrosoftClientId":  "",
-  "MicrosoftClientSecret": ""
-}
-```
-
-Any field left blank or omitted causes the script to prompt interactively for that value.
 
 ---
 
@@ -128,30 +123,30 @@ docker compose up
 
 The container listens on port **8080** (HTTP). For HTTPS in development, Visual Studio's Docker profile mounts the dev certificate automatically.
 
-### Environment variables for containers
+### Configuration for containers
 
-Copy `.env.production` (generated by the setup script) to your deployment host and load it:
+Compose reads `.env` from the repository root. Start from the template:
 
-```yaml
-# docker-compose.yml — production override
-services:
-  authserver:
-    env_file:
-      - .env.production
+```bash
+cp docker/.env.example .env
 ```
-
-Key variables:
 
 | Variable | Purpose |
 |---|---|
-| `OpenIddict__BlazorClient__BaseUri` | Public URL the OIDC client redirects to |
-| `OpenIddict__M2MClient__ClientSecret` | M2M client secret (rotate before production) |
-| `AdminSeed__Email` | Initial admin email (remove after first boot) |
-| `AdminSeed__Username` | Initial admin username (remove after first boot) |
-| `AdminSeed__Password` | Initial admin password (remove after first boot) |
-| `Authentication__Google__ClientId` | Google OAuth client ID |
-| `Authentication__Google__ClientSecret` | Google OAuth client secret |
-| `ConnectionStrings__DefaultConnection` | Database connection string override |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Postgres superuser — administration only |
+| `POSTGRES_DB` | Database name |
+| `APP_DB_USER` / `APP_DB_PASSWORD` | Least-privilege role the auth server connects as |
+| `AUTH_BASE_URI` | Public URL the OIDC client redirects to |
+| `M2M_CLIENT_SECRET` | M2M client secret (rotate before production) |
+| `ADMIN_SEED_EMAIL` / `_USERNAME` / `_PASSWORD` | Initial admin, seeded only on an empty database |
+| `DOCKER_NETWORK_NAME` / `_EXTERNAL` | Shared network for Postgres and the auth server |
+| `POSTGRES_HOST_PORT` | Host port for Postgres (bound to loopback) |
+
+Settings not in that list are overridden with the standard ASP.NET Core double-underscore form,
+e.g. `ConnectionStrings__DefaultConnection` or `Authentication__Google__ClientId`.
+
+For a real deployment, inject secrets from your secret store rather than a file on disk.
+[docker/README.md](docker/README.md) has the full details.
 
 ---
 
@@ -160,12 +155,11 @@ Key variables:
 | File | Purpose | In source control |
 |---|---|---|
 | `appsettings.json` | Baseline defaults (non-sensitive) | Yes |
-| `appsettings.Development.json` | Dev overrides written by setup script | Yes |
-| `appsettings.Production.json` | Production overrides written by setup script | Yes |
-| `dotnet user-secrets` | Sensitive values in Development | No (per-machine) |
-| `.env.production` | Sensitive values for Production | No (gitignored) |
-| `setup.json` | Your local settings file for the setup script | No (gitignored) |
-| `setup.example.json` | Template for `setup.json` | Yes |
+| `appsettings.Development.json` | Local overrides (DB provider, connection string) | Yes |
+| `appsettings.Production.json` | Production overrides | Yes |
+| `dotnet user-secrets` | Secrets for local, non-container development | No (per-machine) |
+| `.env` | Secrets and settings for the container setup | No (gitignored) |
+| `docker/.env.example` | Template for `.env`, placeholders only | Yes |
 
 ---
 
@@ -258,14 +252,20 @@ dotnet build OAuthSolution.sln
 # Run (serves API + Blazor WASM at https://localhost:7100)
 dotnet run --project src/AuthServer/AuthServer.API
 
-# Add an EF Core migration
+# Add an EF Core migration.
+# Migrations live in the provider-specific projects, not in DataContext, and each
+# provider needs its own — run this twice, once per provider.
 dotnet ef migrations add <MigrationName> `
-  --project PixSmith.Authorization.DataContext `
+  --project src/PixSmith.Authorization.DataContext.Migrations.Sqlite `
+  --startup-project src/AuthServer/AuthServer.API
+
+dotnet ef migrations add <MigrationName> `
+  --project src/PixSmith.Authorization.DataContext.Migrations.Postgres `
   --startup-project src/AuthServer/AuthServer.API
 
 # Apply migrations manually (also runs automatically on startup)
 dotnet ef database update `
-  --project PixSmith.Authorization.DataContext `
+  --project src/PixSmith.Authorization.DataContext.Migrations.Sqlite `
   --startup-project src/AuthServer/AuthServer.API
 
 # View configured user-secrets

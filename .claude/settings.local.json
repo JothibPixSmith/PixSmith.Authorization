@@ -22,7 +22,9 @@
       "Bash(curl -sk -X POST https://localhost:7199/connect/token -d grant_type=client_credentials -d client_id=rogue-service -d client_secret=rogue-secret-123 -d 'scope=admin api' -o /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-token.json)",
       "Bash(curl -sk https://localhost:7199/api/admin/tenants -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -w '  [GET tenants: %{http_code}]\\\\n' -o /dev/null)",
       "Bash(curl -sk -X POST https://localhost:7199/api/admin/tenants -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' --data-binary @/tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/body.json -w '  [POST tenants: %{http_code}]\\\\n' -o /tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-create.json)",
-      "Bash(python3 -c 'import json;d=json.load\\(open\\('\\\\''/tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-create.json'\\\\''\\)\\);print\\('\\\\''  '\\\\'',d.get\\('\\\\''title'\\\\''\\),'\\\\''—'\\\\'',d.get\\('\\\\''detail'\\\\''\\)\\)')"
+      "Bash(python3 -c 'import json;d=json.load\\(open\\('\\\\''/tmp/claude-1000/-home-base-Repos-PixSmith-Authorization/506627a3-c4f8-4248-acf9-f8235dbdeef9/scratchpad/rogue-create.json'\\\\''\\)\\);print\\('\\\\''  '\\\\'',d.get\\('\\\\''title'\\\\''\\),'\\\\''—'\\\\'',d.get\\('\\\\''detail'\\\\''\\)\\)')",
+      "Bash(chmod +x debug/start.sh debug/stop.sh)",
+      "Bash(docker run *)"
     ]
   }
 }
