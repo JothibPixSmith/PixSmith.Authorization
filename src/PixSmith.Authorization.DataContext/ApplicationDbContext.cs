@@ -19,6 +19,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
     public DbSet<ProvisioningNonce> ProvisioningNonces => Set<ProvisioningNonce>();
 
+    // Multi-tenancy (docs/MULTI-TENANCY.md). Present but not yet read by the
+    // authorization path — see that document's staging table.
+    public DbSet<TenantMembershipRecord> TenantMemberships => Set<TenantMembershipRecord>();
+    public DbSet<TenantMembershipRoleRecord> TenantMembershipRoles => Set<TenantMembershipRoleRecord>();
+    public DbSet<MembershipApplicationRoleRecord> MembershipApplicationRoles => Set<MembershipApplicationRoleRecord>();
+    public DbSet<TenantApplicationRecord> TenantApplications => Set<TenantApplicationRecord>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -92,6 +99,50 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.HasIndex(x => x.UsedAt);
         });
 
+        // ─── Multi-tenancy ──────────────────────────────────────────────────
+        // Cascade deletes are declared explicitly: removing a company must not strand
+        // membership or subscription rows that would otherwise keep granting access.
+
+        builder.Entity<TenantMembershipRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            // One membership per person per company. The database enforces this rather
+            // than application code, so a concurrent double-invite cannot create two.
+            e.HasIndex(x => new { x.TenantId, x.UserId }).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne<TenantRecord>().WithMany()
+                .HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TenantMembershipRoleRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Role).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => new { x.MembershipId, x.Role }).IsUnique();
+            e.HasOne<TenantMembershipRecord>().WithMany()
+                .HasForeignKey(x => x.MembershipId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<MembershipApplicationRoleRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ClientId).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Role).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => new { x.MembershipId, x.ClientId, x.Role }).IsUnique();
+            e.HasOne<TenantMembershipRecord>().WithMany()
+                .HasForeignKey(x => x.MembershipId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TenantApplicationRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ClientId).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => new { x.TenantId, x.ClientId }).IsUnique();
+            e.HasIndex(x => x.ClientId);
+            e.HasOne<TenantRecord>().WithMany()
+                .HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         // Apply OpenIddict entity configurations
         builder.UseOpenIddict<Guid>();
     }
@@ -161,6 +212,43 @@ public class ProvisioningNonce
     /// <summary>The human operator who submitted the request.</summary>
     public Guid? UserId { get; set; }
     public DateTimeOffset UsedAt { get; set; }
+}
+
+/// <summary>A person's membership of a company. See docs/MULTI-TENANCY.md.</summary>
+public class TenantMembershipRecord
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A role held across a whole company.</summary>
+public class TenantMembershipRoleRecord
+{
+    public Guid Id { get; set; }
+    public Guid MembershipId { get; set; }
+    public string Role { get; set; } = string.Empty;
+}
+
+/// <summary>A role held only within one application, for one member of one company.</summary>
+public class MembershipApplicationRoleRecord
+{
+    public Guid Id { get; set; }
+    public Guid MembershipId { get; set; }
+    public string ClientId { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+}
+
+/// <summary>A company's subscription to an application, by OpenIddict client id.</summary>
+public class TenantApplicationRecord
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public string ClientId { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public class TenantRecord

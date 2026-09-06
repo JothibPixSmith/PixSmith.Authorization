@@ -15,7 +15,7 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
                 {
@@ -496,6 +496,33 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.ToTable("EmailOutboxMessages");
                 });
 
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationRoleRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId", "ClientId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("MembershipApplicationRoles");
+                });
+
             modelBuilder.Entity("PixSmith.Authorization.DataContext.OAuthClientRegistration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -614,6 +641,86 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.HasIndex("UsedAt");
 
                     b.ToTable("ProvisioningNonces");
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantApplicationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("TenantId", "ClientId")
+                        .IsUnique();
+
+                    b.ToTable("TenantApplications");
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantMembershipRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TenantId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("TenantMemberships");
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantMembershipRoleRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("TenantMembershipRoles");
                 });
 
             modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantRecord", b =>
@@ -763,6 +870,42 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.Navigation("Application");
 
                     b.Navigation("Authorization");
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationRoleRecord", b =>
+                {
+                    b.HasOne("PixSmith.Authorization.DataContext.TenantMembershipRecord", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantApplicationRecord", b =>
+                {
+                    b.HasOne("PixSmith.Authorization.DataContext.TenantRecord", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantMembershipRecord", b =>
+                {
+                    b.HasOne("PixSmith.Authorization.DataContext.TenantRecord", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.TenantMembershipRoleRecord", b =>
+                {
+                    b.HasOne("PixSmith.Authorization.DataContext.TenantMembershipRecord", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", b =>

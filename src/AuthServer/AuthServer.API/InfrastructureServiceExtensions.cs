@@ -232,6 +232,8 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IOAuthClientRepository, OAuthClientRepository>();
 		services.AddTransient<IUserRepository, UserRepository>();
 		services.AddTransient<ITenantRepository, TenantRepository>();
+		services.AddTransient<ITenantMembershipRepository, TenantMembershipRepository>();
+		services.AddTransient<ITenantApplicationRepository, TenantApplicationRepository>();
 
 		// ─── Email ────────────────────────────────────────────
 

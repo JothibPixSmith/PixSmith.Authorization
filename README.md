@@ -206,6 +206,10 @@ Tenant creation is deliberately not automatable: it requires an interactive huma
 plus a quorum of offline operator signatures. See
 **[docs/TENANT-PROVISIONING.md](docs/TENANT-PROVISIONING.md)**.
 
+Tenants are currently inert — a named record that scopes nothing.
+**[docs/MULTI-TENANCY.md](docs/MULTI-TENANCY.md)** is the design (not yet built) for giving them
+meaning: platform, company and application tiers over a single identity.
+
 ---
 
 ## Architecture
