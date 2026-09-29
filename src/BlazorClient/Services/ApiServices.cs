@@ -62,6 +62,24 @@ public sealed record TenantModel(
     Guid Id, string Name, string Slug, string? Description,
     bool IsActive, DateTimeOffset CreatedAt);
 
+public sealed record TenantMemberModel(
+    Guid MembershipId,
+    Guid UserId,
+    string Username,
+    string Email,
+    bool IsActive,
+    List<string> Roles,
+    Dictionary<string, List<string>> ApplicationRoles,
+    DateTimeOffset CreatedAt);
+
+public sealed record TenantApplicationModel(
+    Guid Id,
+    Guid TenantId,
+    string ClientId,
+    string? DisplayName,
+    bool IsActive,
+    DateTimeOffset CreatedAt);
+
 public sealed class CreateTenantFormModel
 {
     public string Name { get; set; } = string.Empty;
@@ -247,6 +265,9 @@ public interface IOidcAppApiService
     Task<OidcAppModel> CreateAppAsync(CreateOidcAppFormModel model);
     Task UpdateAppAsync(string clientId, UpdateOidcAppFormModel model);
     Task DeleteAppAsync(string clientId);
+
+    /// <summary>Returns the new secret — shown once, never retrievable again.</summary>
+    Task<string> RotateSecretAsync(string clientId, string? chosenSecret);
 }
 
 public sealed class OidcAppApiService(HttpClient http) : IOidcAppApiService
@@ -284,6 +305,31 @@ public sealed class OidcAppApiService(HttpClient http) : IOidcAppApiService
 
     public Task DeleteAppAsync(string clientId) =>
         http.DeleteAsync($"api/admin/oidc-apps/{Uri.EscapeDataString(clientId)}").AsTask();
+
+    public async Task<string> RotateSecretAsync(string clientId, string? chosenSecret)
+    {
+        var response = await http.PostAsJsonAsync(
+            $"api/admin/oidc-apps/{clientId}/rotate-secret",
+            new { ClientSecret = string.IsNullOrWhiteSpace(chosenSecret) ? null : chosenSecret });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string? message = null;
+            try
+            {
+                var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+                if (problem.TryGetProperty("error", out var error)) message = error.GetString();
+            }
+            catch { /* fall through to the status code */ }
+
+            throw new InvalidOperationException(message ?? $"Rotation failed ({(int)response.StatusCode}).");
+        }
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return body.GetProperty("clientSecret").GetString()
+            ?? throw new InvalidOperationException("The server did not return a secret.");
+    }
+
 }
 
 // ─── Tenant API Service ────────────────────────────────────────────────────
@@ -296,6 +342,18 @@ public interface ITenantApiService
     Task ActivateTenantAsync(Guid id);
     Task DeactivateTenantAsync(Guid id);
     Task DeleteTenantAsync(Guid id);
+
+    // Membership and subscription management — see docs/MULTI-TENANCY.md
+    Task<IEnumerable<TenantMemberModel>> GetMembersAsync(Guid tenantId);
+    Task AddMemberAsync(Guid tenantId, Guid userId, List<string> roles);
+    Task UpdateMemberAsync(Guid tenantId, Guid userId, bool isActive, List<string> roles,
+                           Dictionary<string, List<string>> applicationRoles);
+    Task RemoveMemberAsync(Guid tenantId, Guid userId);
+
+    Task<IEnumerable<TenantApplicationModel>> GetApplicationsAsync(Guid tenantId);
+    Task AddApplicationAsync(Guid tenantId, string clientId);
+    Task SetApplicationActiveAsync(Guid tenantId, string clientId, bool isActive);
+    Task RemoveApplicationAsync(Guid tenantId, string clientId);
 }
 
 public sealed class TenantApiService(HttpClient http) : ITenantApiService
@@ -322,6 +380,75 @@ public sealed class TenantApiService(HttpClient http) : ITenantApiService
 
     public Task DeleteTenantAsync(Guid id) =>
         http.DeleteAsync($"api/admin/tenants/{id}").AsTask();
+
+    // ── Members ──────────────────────────────────────────────────────────────
+
+    public async Task<IEnumerable<TenantMemberModel>> GetMembersAsync(Guid tenantId) =>
+        await http.GetFromJsonAsync<List<TenantMemberModel>>(
+            $"api/admin/tenants/{tenantId}/members") ?? [];
+
+    public async Task AddMemberAsync(Guid tenantId, Guid userId, List<string> roles)
+    {
+        var response = await http.PostAsJsonAsync(
+            $"api/admin/tenants/{tenantId}/members", new { UserId = userId, Roles = roles });
+        await ThrowOnErrorAsync(response);
+    }
+
+    public async Task UpdateMemberAsync(Guid tenantId, Guid userId, bool isActive,
+        List<string> roles, Dictionary<string, List<string>> applicationRoles)
+    {
+        var response = await http.PutAsJsonAsync(
+            $"api/admin/tenants/{tenantId}/members/{userId}",
+            new { IsActive = isActive, Roles = roles, ApplicationRoles = applicationRoles });
+        await ThrowOnErrorAsync(response);
+    }
+
+    public async Task RemoveMemberAsync(Guid tenantId, Guid userId) =>
+        await ThrowOnErrorAsync(await http.DeleteAsync($"api/admin/tenants/{tenantId}/members/{userId}"));
+
+    // ── Application subscriptions ────────────────────────────────────────────
+
+    public async Task<IEnumerable<TenantApplicationModel>> GetApplicationsAsync(Guid tenantId) =>
+        await http.GetFromJsonAsync<List<TenantApplicationModel>>(
+            $"api/admin/tenants/{tenantId}/applications") ?? [];
+
+    public async Task AddApplicationAsync(Guid tenantId, string clientId)
+    {
+        var response = await http.PostAsJsonAsync(
+            $"api/admin/tenants/{tenantId}/applications", new { ClientId = clientId });
+        await ThrowOnErrorAsync(response);
+    }
+
+    public async Task SetApplicationActiveAsync(Guid tenantId, string clientId, bool isActive)
+    {
+        var response = await http.PutAsJsonAsync(
+            $"api/admin/tenants/{tenantId}/applications/{clientId}", new { IsActive = isActive });
+        await ThrowOnErrorAsync(response);
+    }
+
+    public async Task RemoveApplicationAsync(Guid tenantId, string clientId) =>
+        await ThrowOnErrorAsync(await http.DeleteAsync($"api/admin/tenants/{tenantId}/applications/{clientId}"));
+
+    /// <summary>
+    /// Surfaces the API's own error message instead of "Response status code does not
+    /// indicate success" — these endpoints reject for reasons an admin can act on, such as
+    /// an unknown client id or a duplicate membership.
+    /// </summary>
+    private static async Task ThrowOnErrorAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode) return;
+
+        string? message = null;
+        try
+        {
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            if (problem.TryGetProperty("error", out var error))
+                message = error.GetString();
+        }
+        catch { /* fall through to the status code */ }
+
+        throw new InvalidOperationException(message ?? $"Request failed ({(int)response.StatusCode}).");
+    }
 }
 
 // ─── Account API Service ───────────────────────────────────────────────────

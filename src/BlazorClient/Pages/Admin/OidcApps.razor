@@ -212,6 +212,11 @@
                     <div class="flex gap-3 pt-1 border-t border-gray-100">
                         <button @onclick="() => ShowEditModal(app)"
                                 class="text-xs text-blue-600 hover:underline">Edit</button>
+                        @if (string.Equals(app.ClientType, "confidential", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <button @onclick="() => ShowRotateModal(app)"
+                                    class="text-xs text-amber-600 hover:underline">Rotate secret</button>
+                        }
                         <button @onclick="() => DeleteAppAsync(app.ClientId)"
                                 class="text-xs text-red-500 hover:underline">Delete</button>
                     </div>
@@ -220,6 +225,47 @@
         </div>
     }
 </div>
+
+@if (_rotating is not null)
+{
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            @if (_rotatedSecret is null)
+            {
+                <h2 class="text-lg font-bold text-gray-800">Rotate secret — @_rotating.ClientId</h2>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                    Every deployment sharing this client ID stops authenticating the moment this
+                    completes — there is no overlap window. Make sure you can update them all.
+                    Registering one client per environment keeps a rotation scoped to one of them.
+                </div>
+                <InputField Label="New secret (leave blank to generate a strong one)"
+                            @bind-Value="_chosenSecret" Placeholder="Generated automatically" />
+                @if (_rotateError is not null)
+                {
+                    <p class="text-sm text-red-600">@_rotateError</p>
+                }
+                <div class="flex justify-end gap-3 pt-2">
+                    <button @onclick="CloseRotateModal" class="btn-secondary">Cancel</button>
+                    <button @onclick="RotateAsync" class="btn-primary" disabled="@_rotatingBusy">
+                        @(_rotatingBusy ? "Rotating..." : "Rotate secret")
+                    </button>
+                </div>
+            }
+            else
+            {
+                <h2 class="text-lg font-bold text-gray-800">New secret for @_rotating.ClientId</h2>
+                <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                    Copy this now. It is stored hashed and cannot be shown again — losing it means
+                    rotating a second time.
+                </div>
+                <code class="block bg-gray-100 rounded-lg p-3 text-sm break-all font-mono">@_rotatedSecret</code>
+                <div class="flex justify-end pt-2">
+                    <button @onclick="CloseRotateModal" class="btn-primary">Done</button>
+                </div>
+            }
+        </div>
+    </div>
+}
 
 @code {
     private static readonly string[] _allGrantTypes =
@@ -315,6 +361,51 @@
             _formError = ex.Message;
         }
         finally { _saving = false; }
+    }
+
+    // ── Secret rotation ──────────────────────────────────────────────────────
+    // Separate from editing on purpose: rotation invalidates the credentials every
+    // deployment of this client is using.
+
+    private OidcAppModel? _rotating;
+    private string _chosenSecret = string.Empty;
+    private string? _rotatedSecret;
+    private string? _rotateError;
+    private bool _rotatingBusy;
+
+    private void ShowRotateModal(OidcAppModel app)
+    {
+        _rotating = app;
+        _chosenSecret = string.Empty;
+        _rotatedSecret = null;
+        _rotateError = null;
+    }
+
+    private void CloseRotateModal()
+    {
+        _rotating = null;
+        _rotatedSecret = null;
+        _chosenSecret = string.Empty;
+    }
+
+    private async Task RotateAsync()
+    {
+        if (_rotating is null) return;
+
+        _rotatingBusy = true;
+        _rotateError = null;
+        try
+        {
+            _rotatedSecret = await OidcApi.RotateSecretAsync(_rotating.ClientId, _chosenSecret);
+        }
+        catch (Exception ex)
+        {
+            _rotateError = ex.Message;
+        }
+        finally
+        {
+            _rotatingBusy = false;
+        }
     }
 
     private async Task DeleteAppAsync(string clientId)

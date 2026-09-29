@@ -16,6 +16,7 @@ public sealed class AdminController(
     IUserService userService,
     IOAuthClientService clientService,
     ITenantService tenantService,
+    ITenantAccessService tenantAccessService,
     IOidcAppService oidcAppService,
     UserManager<IdentityUser<Guid>> userManager) : ControllerBase
 {
@@ -314,6 +315,93 @@ public sealed class AdminController(
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 
+
+    // ─── Tenant Membership & Subscriptions ────────────────────────────────────
+    //
+    // Not gated by [RequireProvisioningSignature]. That control guards the tenant
+    // *registry* — bringing a tenancy into existence. Adding a member to a company that
+    // already exists, or subscribing it to an application, is routine administration
+    // within an established tenancy, and requiring two offline signatures for every
+    // staff change would make the control something people route around.
+
+    [HttpGet("tenants/{tenantId:guid}/members")]
+    [ProducesResponseType(typeof(IEnumerable<TenantMemberDto>), 200)]
+    public async Task<IActionResult> GetTenantMembers(Guid tenantId, CancellationToken ct)
+    {
+        var result = await tenantAccessService.GetMembersAsync(tenantId, ct);
+        return result.IsSuccess ? Ok(result.Value) : NotFound(new { error = result.Error });
+    }
+
+    [HttpPost("tenants/{tenantId:guid}/members")]
+    [ProducesResponseType(typeof(TenantMemberDto), 201)]
+    public async Task<IActionResult> AddTenantMember(
+        Guid tenantId, [FromBody] AddTenantMemberRequest request, CancellationToken ct)
+    {
+        var result = await tenantAccessService.AddMemberAsync(tenantId, request, ct);
+        if (!result.IsSuccess) return BadRequest(new { error = result.Error });
+
+        return CreatedAtAction(nameof(GetTenantMembers), new { tenantId }, result.Value);
+    }
+
+    [HttpPut("tenants/{tenantId:guid}/members/{userId:guid}")]
+    public async Task<IActionResult> UpdateTenantMember(
+        Guid tenantId, Guid userId, [FromBody] UpdateTenantMemberRequest request, CancellationToken ct)
+    {
+        var result = await tenantAccessService.UpdateMemberAsync(tenantId, userId, request, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("tenants/{tenantId:guid}/members/{userId:guid}")]
+    public async Task<IActionResult> RemoveTenantMember(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        var result = await tenantAccessService.RemoveMemberAsync(tenantId, userId, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    /// <summary>Every company a user belongs to — the data behind a company picker.</summary>
+    [HttpGet("users/{userId:guid}/memberships")]
+    [ProducesResponseType(typeof(IEnumerable<UserMembershipDto>), 200)]
+    public async Task<IActionResult> GetUserMemberships(Guid userId, CancellationToken ct)
+    {
+        var result = await tenantAccessService.GetMembershipsForUserAsync(userId, ct);
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(500);
+    }
+
+    [HttpGet("tenants/{tenantId:guid}/applications")]
+    [ProducesResponseType(typeof(IEnumerable<TenantApplicationDto>), 200)]
+    public async Task<IActionResult> GetTenantApplications(Guid tenantId, CancellationToken ct)
+    {
+        var result = await tenantAccessService.GetApplicationsAsync(tenantId, ct);
+        return result.IsSuccess ? Ok(result.Value) : NotFound(new { error = result.Error });
+    }
+
+    [HttpPost("tenants/{tenantId:guid}/applications")]
+    [ProducesResponseType(typeof(TenantApplicationDto), 201)]
+    public async Task<IActionResult> AddTenantApplication(
+        Guid tenantId, [FromBody] AddTenantApplicationRequest request, CancellationToken ct)
+    {
+        var result = await tenantAccessService.AddApplicationAsync(tenantId, request, ct);
+        if (!result.IsSuccess) return BadRequest(new { error = result.Error });
+
+        return CreatedAtAction(nameof(GetTenantApplications), new { tenantId }, result.Value);
+    }
+
+    [HttpPut("tenants/{tenantId:guid}/applications/{clientId}")]
+    public async Task<IActionResult> UpdateTenantApplication(
+        Guid tenantId, string clientId, [FromBody] UpdateTenantApplicationRequest request, CancellationToken ct)
+    {
+        var result = await tenantAccessService.UpdateApplicationAsync(tenantId, clientId, request, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("tenants/{tenantId:guid}/applications/{clientId}")]
+    public async Task<IActionResult> RemoveTenantApplication(
+        Guid tenantId, string clientId, CancellationToken ct)
+    {
+        var result = await tenantAccessService.RemoveApplicationAsync(tenantId, clientId, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
     // ─── OpenIddict Application Management ───────────────────────────────────
 
     [HttpGet("oidc-apps")]
@@ -354,5 +442,27 @@ public sealed class AdminController(
     {
         var result = await oidcAppService.DeleteAsync(clientId, ct);
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    /// <summary>
+    /// Rotates a confidential application's client secret and returns the new value.
+    ///
+    /// <para>
+    /// Separate from the update endpoint deliberately: rotation invalidates the credentials
+    /// every deployment of that client is using, and that should never be a side effect of
+    /// editing a redirect URI.
+    /// </para>
+    /// </summary>
+    [HttpPost("oidc-apps/{clientId}/rotate-secret")]
+    [ProducesResponseType(typeof(RotateClientSecretResponse), 200)]
+    [ProducesResponseType(typeof(ProblemDetails), 400)]
+    public async Task<IActionResult> RotateOidcAppSecret(
+        string clientId, [FromBody] RotateClientSecretRequest? request, CancellationToken ct)
+    {
+        // The body is optional: no secret supplied means "generate one".
+        var result = await oidcAppService.RotateSecretAsync(
+            clientId, request ?? new RotateClientSecretRequest(null), ct);
+
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(new { error = result.Error });
     }
 }

@@ -85,6 +85,8 @@
                     <div class="flex gap-2 pt-1">
                         <button @onclick="() => ShowEditModal(tenant)"
                                 class="text-xs text-blue-600 hover:underline">Edit</button>
+                        <a href="/admin/tenants/@tenant.Id"
+                           class="text-xs text-blue-600 hover:underline">Members &amp; apps</a>
                         <button @onclick="() => DeleteTenant(tenant.Id)"
                                 class="text-xs text-red-500 hover:underline">Delete</button>
                         @if (tenant.IsActive)

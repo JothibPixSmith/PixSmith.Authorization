@@ -1,7 +1,8 @@
 # Multi-Tenancy Design
 
-**Status: design, not built.** Nothing in this document is implemented yet. The `Tenants` table
-exists but is inert — no foreign key points at it and no issued token mentions it.
+**Status: stages 1–3 built, 4–6 outstanding.** The schema, admin API and backfill exist; the
+authorization path does not read any of it yet. A token issued today still carries no `org_id`,
+and no sign-in is refused on tenancy grounds. See the [staging table](#suggested-staging).
 
 This describes how to introduce three tiers of user — platform, company, application — using a
 single identity, without inventing anything OAuth 2.0 and OpenID Connect do not already support.
@@ -188,11 +189,23 @@ The database currently holds **1 user, 0 tenants, 3 clients**. Switching enforce
 memberships would deny every authorization request, so the rollout needs a backfill.
 
 1. **Migrations** — four tables, generated for *both* providers (`…Migrations.Sqlite` and
-   `…Migrations.Postgres`). The build fails silently on the wrong one if you forget.
-2. **Backfill** — create a `default` tenant, add every existing user as a member, subscribe every
-   existing client. Deterministic, one-time, and leaves no permanent "if no tenants exist, skip the
-   check" branch in the authorization path. Conditional security is how enforcement quietly stops
-   applying.
+   `…Migrations.Postgres`). The build fails silently on the wrong one if you forget. ✅
+2. **Backfill** — `TenantBackfillSeeder` creates a `Default` tenancy, adds every existing user as a
+   member, and subscribes every registered client. It leaves no permanent "if no tenants exist, skip
+   the check" branch in the authorization path — conditional security is how enforcement quietly
+   stops applying. ✅
+
+   Two guards bound it, and both matter more than the happy path:
+
+   - **Any tenancy already exists → skip.** Re-running against a live system would sweep every user
+     into a company, including people deliberately removed from it.
+   - **No users exist → skip.** A fresh install gains tenancies through the signed provisioning
+     flow; an empty default would be clutter that also suppresses the seeder forever.
+
+   Users holding the platform `Admin` role additionally receive `OrgAdmin` in the migrated tenancy,
+   so whoever administered the system beforehand can still administer where they land. After the
+   backfill that authority comes from the explicit membership, not from being staff — configurable
+   via `TenantBackfill:MemberRole` and `TenantBackfill:AdminRole`.
 3. **Enforce** — turn on the authorize-time checks once the backfill has run.
 
 > **The backfill bypasses the provisioning control, and that is expected.**
@@ -210,9 +223,9 @@ Each stage is independently shippable and leaves the system working.
 
 | Stage | Contents | Risk |
 |---|---|---|
-| 1 | Schema, EF entities, repositories, both migrations. No behaviour change | Low — nothing reads it yet |
-| 2 | Admin API + Blazor pages for memberships and subscriptions | Low |
-| 3 | Backfill migration (default tenant, existing users and clients) | Low, but do it before stage 4 |
+| 1 | ✅ **Done** — schema, EF entities, repositories, both migrations | Low — nothing reads it yet |
+| 2 | ✅ **Done** — admin API + Blazor pages for memberships and subscriptions | Low |
+| 3 | ✅ **Done** — backfill seeder (default tenant, existing users and clients) | Low, but do it before stage 4 |
 | 4 | Claim emission — `org_id`, `org_slug`, `roles` — plus `GetDestinations` entries | Medium: see the gotcha below |
 | 5 | Authorize-time enforcement + refresh re-validation | **High** — this is where sign-ins start being refused |
 | 6 | Per-application scopes and resources (audience isolation) | Medium — needs integrated apps to update their expected `aud` |

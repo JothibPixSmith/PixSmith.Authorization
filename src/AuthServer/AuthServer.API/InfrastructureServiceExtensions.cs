@@ -250,8 +250,14 @@ public static class InfrastructureServiceExtensions
 
 		services.Configure<TenantProvisioningOptions>(
 			configuration.GetSection(TenantProvisioningOptions.SectionName));
+		services.Configure<TenantBackfillOptions>(
+			configuration.GetSection(TenantBackfillOptions.SectionName));
 		services.TryAddSingleton(TimeProvider.System);
 		services.AddScoped<IProvisioningAuthorizer, ProvisioningAuthorizer>();
+
+		// Audit needs the ambient request to attribute an action to a person.
+		services.AddHttpContextAccessor();
+		services.AddTransient<IAuditService, AuditService>();
 
 		services.AddTransient<IPasswordHashingService, PasswordHashingService>();
 		services.AddTransient<IEmailService, EmailService>();
@@ -263,6 +269,7 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IOAuthClientService, OAuthClientService>();
 		services.AddTransient<ITenantService, TenantService>();
 		services.AddScoped<IOidcAppService, OidcAppService>();
+		services.AddTransient<ITenantAccessService, TenantAccessService>();
 
 		services.AddHostedService<OpenIddictSeeder>();
 

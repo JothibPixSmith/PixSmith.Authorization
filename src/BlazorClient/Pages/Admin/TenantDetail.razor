@@ -1,0 +1,297 @@
+@page "/admin/tenants/{TenantId:guid}"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@inject ITenantApiService TenantApi
+@inject IAdminApiService AdminApi
+@inject IOidcAppApiService OidcAppApi
+@inject NavigationManager Nav
+
+<PageTitle>Tenant Access - AuthServer</PageTitle>
+
+<div class="space-y-6">
+
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">🏢 @(_tenant?.Name ?? "Tenant")</h1>
+            <p class="text-sm text-gray-500">Members and application subscriptions</p>
+        </div>
+        <a href="/admin/tenants" class="text-sm text-blue-600 hover:underline">← All tenants</a>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">@_error</div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingSpinner />
+    }
+    else
+    {
+        <!-- ─── Applications ─────────────────────────────────────────────── -->
+        <div class="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800">Applications</h2>
+                    <p class="text-xs text-gray-500">
+                        Members can use an application only while this company subscribes to it.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <select @bind="_newClientId"
+                        class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1">
+                    <option value="">Select an application…</option>
+                    @foreach (var app in _availableClients)
+                    {
+                        <option value="@app.ClientId">@(app.DisplayName ?? app.ClientId) (@app.ClientId)</option>
+                    }
+                </select>
+                <button @onclick="AddApplicationAsync" disabled="@string.IsNullOrEmpty(_newClientId)"
+                        class="btn-primary text-sm disabled:opacity-50">Subscribe</button>
+            </div>
+
+            @if (_applications.Count == 0)
+            {
+                <p class="text-sm text-gray-400 py-2">No applications yet — members can reach nothing.</p>
+            }
+            else
+            {
+                <table class="w-full text-sm">
+                    <thead class="text-left text-xs text-gray-500 border-b">
+                        <tr><th class="py-2">Application</th><th>Client ID</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var app in _applications)
+                    {
+                        <tr class="border-b last:border-0">
+                            <td class="py-2 font-medium text-gray-800">@(app.DisplayName ?? "—")</td>
+                            <td class="font-mono text-xs text-gray-600">@app.ClientId</td>
+                            <td>
+                                <span class="px-2 py-0.5 rounded-full text-xs @(app.IsActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")">
+                                    @(app.IsActive ? "Active" : "Suspended")
+                                </span>
+                            </td>
+                            <td class="text-right space-x-3">
+                                <button @onclick="() => ToggleApplicationAsync(app)"
+                                        class="text-xs text-blue-600 hover:underline">
+                                    @(app.IsActive ? "Suspend" : "Resume")
+                                </button>
+                                <button @onclick="() => RemoveApplicationAsync(app)"
+                                        class="text-xs text-red-500 hover:underline">Remove</button>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <!-- ─── Members ──────────────────────────────────────────────────── -->
+        <div class="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">Members</h2>
+                <p class="text-xs text-gray-500">
+                    Roles here apply within this company only. Platform roles are separate and do
+                    not carry into a company context.
+                </p>
+            </div>
+
+            <div class="flex gap-2">
+                <select @bind="_newUserId" class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1">
+                    <option value="">Select a user…</option>
+                    @foreach (var user in _availableUsers)
+                    {
+                        <option value="@user.Id">@user.Username (@user.Email)</option>
+                    }
+                </select>
+                <input @bind="_newRoles" placeholder="Roles, comma separated"
+                       class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1" />
+                <button @onclick="AddMemberAsync" disabled="@(_newUserId == Guid.Empty)"
+                        class="btn-primary text-sm disabled:opacity-50">Add</button>
+            </div>
+
+            @if (_members.Count == 0)
+            {
+                <p class="text-sm text-gray-400 py-2">No members yet.</p>
+            }
+            else
+            {
+                <table class="w-full text-sm">
+                    <thead class="text-left text-xs text-gray-500 border-b">
+                        <tr><th class="py-2">User</th><th>Company roles</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var member in _members)
+                    {
+                        <tr class="border-b last:border-0 align-top">
+                            <td class="py-2">
+                                <div class="font-medium text-gray-800">@member.Username</div>
+                                <div class="text-xs text-gray-500">@member.Email</div>
+                            </td>
+                            <td class="py-2">
+                                @if (_editingMember == member.UserId)
+                                {
+                                    <input @bind="_editRoles"
+                                           class="border border-gray-300 rounded px-2 py-1 text-xs w-full" />
+                                }
+                                else if (member.Roles.Count == 0)
+                                {
+                                    <span class="text-xs text-gray-400">none</span>
+                                }
+                                else
+                                {
+                                    @foreach (var role in member.Roles)
+                                    {
+                                        <span class="inline-block bg-blue-50 text-blue-700 rounded px-2 py-0.5 text-xs mr-1 mb-1">@role</span>
+                                    }
+                                }
+                            </td>
+                            <td class="py-2">
+                                <span class="px-2 py-0.5 rounded-full text-xs @(member.IsActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")">
+                                    @(member.IsActive ? "Active" : "Suspended")
+                                </span>
+                            </td>
+                            <td class="py-2 text-right space-x-3 whitespace-nowrap">
+                                @if (_editingMember == member.UserId)
+                                {
+                                    <button @onclick="() => SaveMemberAsync(member)"
+                                            class="text-xs text-green-600 hover:underline">Save</button>
+                                    <button @onclick="() => _editingMember = null"
+                                            class="text-xs text-gray-500 hover:underline">Cancel</button>
+                                }
+                                else
+                                {
+                                    <button @onclick="() => BeginEdit(member)"
+                                            class="text-xs text-blue-600 hover:underline">Edit roles</button>
+                                    <button @onclick="() => ToggleMemberAsync(member)"
+                                            class="text-xs text-blue-600 hover:underline">
+                                        @(member.IsActive ? "Suspend" : "Resume")
+                                    </button>
+                                    <button @onclick="() => RemoveMemberAsync(member)"
+                                            class="text-xs text-red-500 hover:underline">Remove</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid TenantId { get; set; }
+
+    private TenantModel? _tenant;
+    private List<TenantMemberModel> _members = [];
+    private List<TenantApplicationModel> _applications = [];
+    private List<UserModel> _availableUsers = [];
+    private List<OidcAppModel> _availableClients = [];
+
+    private bool _loading = true;
+    private string? _error;
+
+    private Guid _newUserId;
+    private string _newRoles = string.Empty;
+    private string _newClientId = string.Empty;
+
+    private Guid? _editingMember;
+    private string _editRoles = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _tenant = (await TenantApi.GetTenantsAsync()).FirstOrDefault(t => t.Id == TenantId);
+            _members = [.. await TenantApi.GetMembersAsync(TenantId)];
+            _applications = [.. await TenantApi.GetApplicationsAsync(TenantId)];
+
+            var memberIds = _members.Select(m => m.UserId).ToHashSet();
+            _availableUsers = [.. (await AdminApi.GetUsersAsync(1, 200)).Items
+                .Where(u => !memberIds.Contains(u.Id))];
+
+            var subscribed = _applications.Select(a => a.ClientId).ToHashSet();
+            _availableClients = [.. (await OidcAppApi.GetAppsAsync())
+                .Where(a => !subscribed.Contains(a.ClientId))];
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static List<string> ParseRoles(string raw) =>
+        [.. raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    private void BeginEdit(TenantMemberModel member)
+    {
+        _editingMember = member.UserId;
+        _editRoles = string.Join(", ", member.Roles);
+    }
+
+    private Task AddMemberAsync() =>
+        RunAsync(async () =>
+        {
+            await TenantApi.AddMemberAsync(TenantId, _newUserId, ParseRoles(_newRoles));
+            _newUserId = Guid.Empty;
+            _newRoles = string.Empty;
+        });
+
+    private Task SaveMemberAsync(TenantMemberModel member) =>
+        RunAsync(async () =>
+        {
+            await TenantApi.UpdateMemberAsync(TenantId, member.UserId, member.IsActive,
+                ParseRoles(_editRoles), member.ApplicationRoles);
+            _editingMember = null;
+        });
+
+    private Task ToggleMemberAsync(TenantMemberModel member) =>
+        RunAsync(() => TenantApi.UpdateMemberAsync(TenantId, member.UserId, !member.IsActive,
+            member.Roles, member.ApplicationRoles));
+
+    private Task RemoveMemberAsync(TenantMemberModel member) =>
+        RunAsync(() => TenantApi.RemoveMemberAsync(TenantId, member.UserId));
+
+    private Task AddApplicationAsync() =>
+        RunAsync(async () =>
+        {
+            await TenantApi.AddApplicationAsync(TenantId, _newClientId);
+            _newClientId = string.Empty;
+        });
+
+    private Task ToggleApplicationAsync(TenantApplicationModel app) =>
+        RunAsync(() => TenantApi.SetApplicationActiveAsync(TenantId, app.ClientId, !app.IsActive));
+
+    private Task RemoveApplicationAsync(TenantApplicationModel app) =>
+        RunAsync(() => TenantApi.RemoveApplicationAsync(TenantId, app.ClientId));
+
+    /// <summary>
+    /// Runs a mutation and always reloads, so the table reflects what the server actually
+    /// stored rather than what the UI hoped it stored.
+    /// </summary>
+    private async Task RunAsync(Func<Task> action)
+    {
+        _error = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

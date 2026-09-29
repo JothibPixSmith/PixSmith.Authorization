@@ -143,7 +143,15 @@ public sealed record OidcAppDto(
     IReadOnlyList<string> RedirectUris,
     IReadOnlyList<string> PostLogoutRedirectUris,
     IReadOnlyList<string> Permissions,
-    IReadOnlyList<string> Requirements);
+    IReadOnlyList<string> Requirements,
+    IReadOnlyList<OidcAppSigningKeyDto> SigningKeys);
+
+/// <summary>
+/// A public signing key registered for client assertions. Only the identifying metadata is
+/// returned — enough to confirm which key a deployment is using without shipping the whole
+/// key set around.
+/// </summary>
+public sealed record OidcAppSigningKeyDto(string? Kid, string Kty, string? Alg, string? Use);
 
 public sealed record CreateOidcAppRequest(
     string ClientId,
@@ -153,14 +161,26 @@ public sealed record CreateOidcAppRequest(
     List<string> RedirectUris,
     List<string> PostLogoutRedirectUris,
     List<string> Scopes,
-    List<string> GrantTypes);
+    List<string> GrantTypes,
+    /// <summary>
+    /// Raw JWKS JSON for client-assertion (private_key_jwt) authentication — public keys only.
+    /// A confidential client needs either this or a ClientSecret; supplying this instead is
+    /// what removes the shared secret from config files and deployment pipelines entirely.
+    /// </summary>
+    string? JsonWebKeySet = null);
 
 public sealed record UpdateOidcAppRequest(
     string? DisplayName,
     List<string> RedirectUris,
     List<string> PostLogoutRedirectUris,
     List<string> Scopes,
-    List<string> GrantTypes);
+    List<string> GrantTypes,
+    /// <summary>
+    /// Raw JWKS JSON. Null leaves the registered key set untouched; a value replaces it
+    /// wholesale. Unlike the client secret this really can be read back, so "keep what is
+    /// there" is honestly implementable here.
+    /// </summary>
+    string? JsonWebKeySet = null);
 
 // ─── Admin Dashboard ───────────────────────────────────────────────────────
 
@@ -176,3 +196,69 @@ public sealed record RecentLoginDto(
 	string Username,
 	string Email,
 	DateTimeOffset LoginAt);
+
+// ─── Tenant Access: memberships and application subscriptions ───────────────
+// See docs/MULTI-TENANCY.md. Access to an application is derived — a member may use
+// an app when their company subscribes to it — so these two shapes together describe
+// everything a user is permitted to reach.
+
+public sealed record TenantMemberDto(
+    Guid MembershipId,
+    Guid UserId,
+    string Username,
+    string Email,
+    bool IsActive,
+    IReadOnlyList<string> Roles,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> ApplicationRoles,
+    DateTimeOffset CreatedAt);
+
+/// <summary>One company a user belongs to — the data behind a company picker.</summary>
+public sealed record UserMembershipDto(
+    Guid MembershipId,
+    Guid TenantId,
+    string TenantName,
+    string TenantSlug,
+    bool TenantIsActive,
+    bool IsActive,
+    IReadOnlyList<string> Roles);
+
+public sealed record AddTenantMemberRequest(
+    Guid UserId,
+    List<string> Roles);
+
+public sealed record UpdateTenantMemberRequest(
+    bool IsActive,
+    List<string> Roles,
+    Dictionary<string, List<string>> ApplicationRoles);
+
+public sealed record TenantApplicationDto(
+    Guid Id,
+    Guid TenantId,
+    string ClientId,
+    string? DisplayName,
+    bool IsActive,
+    DateTimeOffset CreatedAt);
+
+public sealed record AddTenantApplicationRequest(string ClientId);
+
+public sealed record UpdateTenantApplicationRequest(bool IsActive);
+
+// ─── OIDC client secret rotation ────────────────────────────────────────────
+// Rotation is a separate operation from updating an application on purpose. Editing a
+// redirect URI must never be one forgotten field away from invalidating the credentials
+// every deployed copy of that client is using.
+//
+// OpenIddict stores a single ClientSecret per application — there is no list and no overlap
+// window — so rotation is always a hard cutover for everything sharing that client id. The
+// mitigation is registration shape, not code: one client per deployment, and client
+// assertions (JsonWebKeySet) instead of a shared secret where compromise would matter.
+// See INTEGRATION.md, "Register one client per deployment".
+
+/// <summary>Omit the secret to have a cryptographically random one generated.</summary>
+public sealed record RotateClientSecretRequest(string? ClientSecret);
+
+/// <summary>
+/// Returned once, and only once. OpenIddict stores the secret hashed and will not hand it
+/// back, so a caller that loses this value has to rotate again.
+/// </summary>
+public sealed record RotateClientSecretResponse(string ClientId, string ClientSecret);

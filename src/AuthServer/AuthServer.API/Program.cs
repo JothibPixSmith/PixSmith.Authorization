@@ -2,6 +2,7 @@
 using Microsoft.OpenApi;
 using PixSmith.Authorization.API;
 using PixSmith.Authorization.DataContext;
+using PixSmith.Authorization.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,9 @@ builder.Host.UseSerilog();
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddHostedService<AdminUserSeeder>(); // runs after OpenIddictSeeder (registration order)
+
+// Must be last: the backfill enumerates the users and clients the two seeders above create.
+builder.Services.AddHostedService<TenantBackfillSeeder>();
 
 
 // Controllers + Swagger.

@@ -10,4 +10,11 @@ public interface IOidcAppService
     Task<Result<OidcAppDto>> CreateAsync(CreateOidcAppRequest request, CancellationToken ct = default);
     Task<Result> UpdateAsync(string clientId, UpdateOidcAppRequest request, CancellationToken ct = default);
     Task<Result> DeleteAsync(string clientId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replaces a confidential application's client secret and returns the new value once.
+    /// Deliberately separate from <c>UpdateAsync</c> — see RotateClientSecretRequest.
+    /// </summary>
+    Task<Result<RotateClientSecretResponse>> RotateSecretAsync(
+        string clientId, RotateClientSecretRequest request, CancellationToken ct = default);
 }

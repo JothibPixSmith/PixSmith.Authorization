@@ -89,6 +89,108 @@ PKCE is enforced automatically for public clients using the authorization code f
 
 Redirect URIs are matched exactly, including scheme, port, and trailing slash.
 
+### Register one client per deployment, not one per application
+
+`myapp-web` is not an application — it is *one deployment of* an application. Register
+production, staging and local separately:
+
+```
+myapp-web-prod        redirect: https://myapp.com/signin-oidc
+myapp-web-staging     redirect: https://staging.myapp.com/signin-oidc
+myapp-web-local       redirect: https://localhost:5001/signin-oidc
+```
+
+The reason is that **a client secret is the client's identity, not a per-instance credential.**
+Every deployment sharing `client_id` presents identical credentials, and the server has no way
+to tell them apart — that is the design, not a gap. Two consequences follow, and both are
+avoided by separate registrations:
+
+- **A leaked staging secret mints production tokens.** Same client, same authority.
+- **Rotating the secret breaks every deployment at once.** OpenIddict stores a single
+  `ClientSecret` per application — there is no list and no overlap window, so the usual
+  "add the new secret, roll out, remove the old" sequence is not available. Rotation is
+  necessarily a hard cutover.
+
+Separate registrations shrink the blast radius of both to one environment. It costs nothing
+but a few extra rows, and it is far cheaper to do now than to untangle after a leak.
+
+Keep the `clientId` values distinct but the *scopes* identical, so a token minted in staging
+still fails against production by audience rather than by permissions.
+
+### For anything genuinely sensitive, skip shared secrets entirely
+
+A shared secret has to exist in a config file, an environment variable, or a deployment
+pipeline somewhere. The alternative is **client assertions** (`private_key_jwt`): each
+deployment holds its own private key, signs a short-lived assertion, and the server stores
+only public keys.
+
+OpenIddict supports this — the application descriptor carries a `JsonWebKeySet`, and its
+own validation message offers it as the alternative to a secret:
+
+> …alternatively, a RSA or ECDSA key (with the key use "sig") can be added to the JSON Web
+> Key Set attached to the application if the client authenticates using client assertions.
+
+That gives what a shared secret structurally cannot:
+
+| | Shared secret | Client assertion |
+|---|---|---|
+| Credential per deployment | No — one value, copied everywhere | Yes — each holds its own key |
+| Zero-downtime rotation | No — single stored value, hard cutover | Yes — a JWKS holds several keys at once |
+| Secret at rest on the server | Hashed, but present | Public keys only |
+
+Register a client with a key set instead of a secret by passing `jsonWebKeySet` (raw JWKS
+JSON) and leaving `clientSecret` null:
+
+```bash
+curl -X POST https://localhost:7100/api/admin/oidc-apps \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "clientId": "myapp-service-prod",
+    "clientSecret": null,
+    "clientType": "confidential",
+    "grantTypes": ["client_credentials"],
+    "scopes": ["myapp.api"],
+    "redirectUris": [], "postLogoutRedirectUris": [],
+    "jsonWebKeySet": "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"kid\":\"2026-09\",\"use\":\"sig\",\"alg\":\"ES256\",\"x\":\"…\",\"y\":\"…\"}]}"
+  }'
+```
+
+`GET /api/admin/oidc-apps` returns the registered keys' `kid`, `kty`, `alg` and `use` under
+`signingKeys`, so you can confirm which key a deployment is on. On update, `jsonWebKeySet`
+omitted keeps the registered set; supplied replaces it wholesale — which is how you roll a
+key: publish both, move the deployments, then re-register with only the new one.
+
+**Private key material is refused, not stripped.** A key carrying `d`, `p`, `q`, `dp`, `dq`,
+`qi` or `k` is rejected with an explicit message telling you to treat that key as compromised.
+Silently stripping it would accept a request in which someone has just pasted their private
+key into an HTTP body and say nothing.
+
+### Two things that will bite when you write the client
+
+Both cost real time to diagnose from the error text alone:
+
+**The assertion needs `"typ": "client-authentication+jwt"`.** A plain `"typ": "JWT"` is
+rejected with *"The specified token is not of the expected type"* (ID2089). OpenIddict
+enforces the RFC 7523bis media type so a token minted for one purpose cannot be replayed as a
+client credential. In .NET, set `SecurityTokenDescriptor.TokenType`.
+
+**The `kid` must match and the key must genuinely be the public half of your signing key.**
+A mismatch reports *"The signing key associated to the specified token was not found"*
+(ID2090) — the same error you get for a wrong `kid`, a wrong curve, or a public key that
+simply is not the pair of the private one. Derive the JWKS from the private key
+programmatically rather than transcribing it.
+
+Then authenticate with no secret at all:
+
+```bash
+curl -X POST https://localhost:7100/connect/token \
+  -d grant_type=client_credentials \
+  -d client_id=myapp-service-prod \
+  -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+  --data-urlencode "client_assertion=$SIGNED_JWT" \
+  -d scope=myapp.api
+```
+
 ---
 
 ## Step 3 — Validate tokens in your API
@@ -295,7 +397,16 @@ Three things had to be fixed before an external app could integrate at all:
 ## Before production
 
 - **Replace the ephemeral signing keys.** `AddEphemeralSigningKey()` / `AddEphemeralEncryptionKey()` generate a new key on every start, so every restart invalidates every token in every app and rotates the JWKS out from under your resource servers. Load real X.509 certificates from a secret store.
-- **Rotate the seeded M2M secret** (`m2m-super-secret-change-in-production`).
+- **Rotate the seeded M2M secret** (`m2m-super-secret-change-in-production`) via
+  `POST /api/admin/oidc-apps/{clientId}/rotate-secret`, or **Rotate secret** on the
+  Admin → OIDC Apps page. The response carries the new value once and it is stored hashed
+  thereafter, so copy it immediately. Rotation is deliberately a separate endpoint from
+  updating an application, so editing a redirect URI cannot invalidate a live client's
+  credentials by accident.
+- **Register one client per deployment**, not one per application — see
+  [Step 2](#register-one-client-per-deployment-not-one-per-application). Rotation is a hard
+  cutover with no overlap window, so this is what stops it taking every environment down at
+  once, and what keeps a leaked staging secret from minting production tokens.
 - **Give each app its own scope resource** so audiences actually isolate apps — see the caveat in Step 1.
 - **Add CORS** if any client is browser-based on a different origin. No CORS middleware is currently registered.
 - **Add a consent screen** if you ever onboard a third-party app. `ConnectController.Authorize` auto-approves every request, which is correct for first-party apps you own and wrong for anyone else's.
