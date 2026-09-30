@@ -202,8 +202,19 @@ public static class InfrastructureServiceExtensions
 				policy.RequireClaim(Claims.Private.Scope, Scopes.OfflineAccess, "api");
 			});
 
-			// Requires a valid bearer token and the "Admin" role (for user-issued tokens)
-			// or the "admin" scope (for M2M tokens).
+			// Administering the authorization server requires BOTH the "Admin" role and the
+			// "admin" scope. They answer different questions and neither is sufficient alone:
+			//
+			//   role  — who the user is.   Without it, a machine client granted "admin" scope
+			//           could administer the server with no human involved at all.
+			//   scope — what this client was authorized to do. Without it, every token issued
+			//           to an administrator can administer, including tokens held by unrelated
+			//           applications they happen to sign in to — a confused deputy.
+			//
+			// Requiring both means only a client explicitly granted admin authority, used by
+			// someone who actually holds it, can reach this API. A client-credentials token
+			// carries no role claim at all, so machine identities are excluded outright.
+			//
 			// Use HasClaim with the JWT short-form claim type ("role") rather than IsInRole,
 			// because the ClaimsIdentity rebuilt by OpenIddict validation uses the default
 			// Windows-URI RoleClaimType which does not match the JWT "role" claim.
@@ -212,7 +223,7 @@ public static class InfrastructureServiceExtensions
 				policy.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
 				policy.RequireAuthenticatedUser();
 				policy.RequireAssertion(ctx =>
-					ctx.User.HasClaim(Claims.Role, "Admin") ||
+					ctx.User.HasClaim(Claims.Role, "Admin") &&
 					ctx.User.HasClaim(Claims.Private.Scope, "admin"));
 			});
 		});

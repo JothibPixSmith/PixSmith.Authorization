@@ -437,5 +437,10 @@ Three things had to be fixed before an external app could integrate at all:
   once, and what keeps a leaked staging secret from minting production tokens.
 - **Give each app its own scope resource** so audiences actually isolate apps — see the caveat in Step 1.
 - **Add CORS** if any client is browser-based on a different origin. No CORS middleware is currently registered.
+- **Administering the auth server needs both the `Admin` role and the `admin` scope.** Neither
+  is sufficient alone: the role without the scope means every token an administrator holds can
+  administer — including one issued to an unrelated application they signed in to — and the
+  scope without the role means a machine client could administer with no human involved. If
+  you build another admin tool, grant it the `admin` scope explicitly.
 - **Add a consent screen** if you ever onboard a third-party app. `ConnectController.Authorize` auto-approves every request, which is correct for first-party apps you own and wrong for anyone else's.
 - **Persist data protection keys** (`DataProtection:KeyPath`) if you run more than one instance.
