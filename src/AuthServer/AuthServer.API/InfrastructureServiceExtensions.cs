@@ -273,6 +273,7 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IOAuthClientService, OAuthClientService>();
 		services.AddTransient<ITenantService, TenantService>();
 		services.AddScoped<IOidcAppService, OidcAppService>();
+		services.AddScoped<IOidcScopeService, OidcScopeService>();
 		services.AddTransient<ITenantAccessService, TenantAccessService>();
 
 		services.AddHostedService<OpenIddictSeeder>();

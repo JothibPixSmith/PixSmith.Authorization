@@ -262,3 +262,24 @@ public sealed record RotateClientSecretRequest(string? ClientSecret);
 /// back, so a caller that loses this value has to rotate again.
 /// </summary>
 public sealed record RotateClientSecretResponse(string ClientId, string ClientSecret);
+
+// ─── OIDC scopes ────────────────────────────────────────────────────────────
+// A scope's resources become the `aud` of every token granted it. Managed at runtime
+// rather than seeded, so onboarding an application needs no redeploy.
+
+public sealed record OidcScopeDto(
+    string Name,
+    string? DisplayName,
+    string? Description,
+    IReadOnlyList<string> Resources);
+
+public sealed record CreateOidcScopeRequest(
+    string Name,
+    string? DisplayName,
+    string? Description,
+    List<string> Resources);
+
+public sealed record UpdateOidcScopeRequest(
+    string? DisplayName,
+    string? Description,
+    List<string> Resources);

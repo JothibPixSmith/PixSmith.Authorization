@@ -18,6 +18,7 @@ public sealed class AdminController(
     ITenantService tenantService,
     ITenantAccessService tenantAccessService,
     IOidcAppService oidcAppService,
+    IOidcScopeService oidcScopeService,
     UserManager<IdentityUser<Guid>> userManager) : ControllerBase
 {
     // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -315,6 +316,56 @@ public sealed class AdminController(
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 
+
+    // ─── OIDC Scope Management ────────────────────────────────────────────────
+    //
+    // A scope's resources become the `aud` of every token granted it, so this is where
+    // audience isolation is configured. Managed at runtime rather than seeded in code,
+    // because onboarding an application should not require a redeploy.
+
+    [HttpGet("oidc-scopes")]
+    [ProducesResponseType(typeof(IReadOnlyList<OidcScopeDto>), 200)]
+    public async Task<IActionResult> GetOidcScopes(CancellationToken ct)
+    {
+        var result = await oidcScopeService.GetAllAsync(ct);
+        return result.IsSuccess ? Ok(result.Value) : StatusCode(500);
+    }
+
+    [HttpGet("oidc-scopes/{name}")]
+    [ProducesResponseType(typeof(OidcScopeDto), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> GetOidcScope(string name, CancellationToken ct)
+    {
+        var result = await oidcScopeService.GetByNameAsync(name, ct);
+        return result.IsSuccess ? Ok(result.Value) : NotFound(new { error = result.Error });
+    }
+
+    [HttpPost("oidc-scopes")]
+    [ProducesResponseType(typeof(OidcScopeDto), 201)]
+    [ProducesResponseType(typeof(ProblemDetails), 400)]
+    public async Task<IActionResult> CreateOidcScope(
+        [FromBody] CreateOidcScopeRequest request, CancellationToken ct)
+    {
+        var result = await oidcScopeService.CreateAsync(request, ct);
+        if (!result.IsSuccess) return BadRequest(new { error = result.Error });
+
+        return CreatedAtAction(nameof(GetOidcScope), new { name = result.Value!.Name }, result.Value);
+    }
+
+    [HttpPut("oidc-scopes/{name}")]
+    public async Task<IActionResult> UpdateOidcScope(
+        string name, [FromBody] UpdateOidcScopeRequest request, CancellationToken ct)
+    {
+        var result = await oidcScopeService.UpdateAsync(name, request, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
+    [HttpDelete("oidc-scopes/{name}")]
+    public async Task<IActionResult> DeleteOidcScope(string name, CancellationToken ct)
+    {
+        var result = await oidcScopeService.DeleteAsync(name, ct);
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
 
     // ─── Tenant Membership & Subscriptions ────────────────────────────────────
     //

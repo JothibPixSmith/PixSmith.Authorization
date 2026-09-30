@@ -27,8 +27,11 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 
 		// ─── Seed Scopes ───────────────────────────────────────────────────
 
-		await EnsureScopeAsync(scopeManager, "api", "API Access", cancellationToken);
-		await EnsureScopeAsync(scopeManager, "admin", "Admin Access", cancellationToken);
+		// These two keep the historical "resource-server" audience so existing integrations
+		// keep validating. Per-application scopes are created through the admin API
+		// (/api/admin/oidc-scopes) rather than seeded here — see docs/MULTI-TENANCY.md.
+		await EnsureScopeAsync(scopeManager, "api", "API Access", "resource-server", cancellationToken);
+		await EnsureScopeAsync(scopeManager, "admin", "Admin Access", "resource-server", cancellationToken);
 
 		// ─── Seed Blazor WASM Client (Public / PKCE + ROPC) ──────────────────
 
@@ -114,10 +117,16 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 			await roleManager.CreateAsync(new IdentityRole<Guid>(name));
 	}
 
+	/// <summary>
+	/// The resource is the audience (<c>aud</c>) of every token granted this scope. Give each
+	/// application its own, so a token minted for one API is not audience-valid at another —
+	/// a single shared resource makes audience validation decorative.
+	/// </summary>
 	private static async Task EnsureScopeAsync(
 		IOpenIddictScopeManager manager,
 		string name,
 		string displayName,
+		string resource,
 		CancellationToken ct)
 	{
 		if (await manager.FindByNameAsync(name, ct) is null)
@@ -126,7 +135,7 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 			{
 				Name = name,
 				DisplayName = displayName,
-				Resources = { "resource-server" }
+				Resources = { resource }
 			}, ct);
 		}
 	}
