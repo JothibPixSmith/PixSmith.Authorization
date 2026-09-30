@@ -35,9 +35,13 @@ public sealed class TenantAccessServiceTests : IDisposable
 
     private Guid SeedUser(string username = "alice")
     {
-        var id = Guid.NewGuid();
+        // A real row as well as the mock: TenantMemberships has a foreign key to Users, so a
+        // membership cannot reference a user that only exists in a mock.
+        var id = _db.NewUser(username);
+
         _users.Setup(m => m.FindByIdAsync(id.ToString()))
               .ReturnsAsync(new IdentityUser<Guid> { Id = id, UserName = username, Email = $"{username}@x.com" });
+
         return id;
     }
 

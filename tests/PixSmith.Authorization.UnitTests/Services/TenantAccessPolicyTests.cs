@@ -52,7 +52,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task A_member_of_a_subscribed_company_is_allowed()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, "OrgAdmin");
         await SubscribeAsync(tenant.Id, "invoicing");
 
@@ -70,7 +70,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     {
         // The whole nesting rule in one test: membership alone is not access.
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, "OrgAdmin");
         // deliberately no subscription
 
@@ -84,7 +84,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task Suspending_the_subscription_denies_every_member_at_once()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, "Member");
 
         var subscriptions = new TenantApplicationRepository(_db.Context);
@@ -101,7 +101,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     {
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(globex.Id, userId, "Member");
         await SubscribeAsync(acme.Id, "invoicing");   // Acme subscribes, not Globex
 
@@ -127,7 +127,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
         // them reveals nothing they did not already know.
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(acme.Id, userId, "Member");
         await SeedMembershipAsync(globex.Id, userId, "Member");
         await SubscribeAsync(acme.Id, "invoicing");
@@ -146,7 +146,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     {
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(acme.Id, userId, "Member");
         await SubscribeAsync(globex.Id, "invoicing");
 
@@ -164,7 +164,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task An_individually_denied_member_is_refused_a_subscribed_application()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SubscribeAsync(tenant.Id, "invoicing");
 
         var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
@@ -182,7 +182,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task A_denial_affects_only_the_named_application()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SubscribeAsync(tenant.Id, "invoicing");
         await SubscribeAsync(tenant.Id, "payroll");
 
@@ -201,8 +201,8 @@ public sealed class TenantAccessPolicyTests : IDisposable
         // The whole reason a denial is per-member rather than a suspended subscription:
         // colleagues must keep working.
         var tenant = await SeedTenantAsync("Acme Corp");
-        var denied = Guid.NewGuid();
-        var colleague = Guid.NewGuid();
+        var denied = _db.NewUser();
+        var colleague = _db.NewUser();
         await SubscribeAsync(tenant.Id, "invoicing");
 
         var repo = new TenantMembershipRepository(_db.Context);
@@ -220,7 +220,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task Restoring_access_reverses_a_denial()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SubscribeAsync(tenant.Id, "invoicing");
 
         var repo = new TenantMembershipRepository(_db.Context);
@@ -242,7 +242,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
         // Denials are managed through their own endpoint; editing roles must not silently
         // restore access someone deliberately removed.
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SubscribeAsync(tenant.Id, "invoicing");
 
         var repo = new TenantMembershipRepository(_db.Context);
@@ -277,7 +277,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task A_platform_client_still_carries_a_company_context_when_one_resolves()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, "OrgAdmin");
 
         var decision = await Build("blazor-client")
@@ -291,7 +291,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
     public async Task The_platform_exemption_does_not_leak_to_other_clients()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, "Member");
 
         var policy = Build("blazor-client");

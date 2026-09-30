@@ -69,7 +69,7 @@ public sealed class TenantMembershipTests : IDisposable
     public async Task Membership_round_trips_with_both_role_kinds()
     {
         var tenantId = await SeedTenantAsync();
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         var repo = new TenantMembershipRepository(_db.Context);
 
         var membership = TenantMembership.Create(tenantId, userId, ["OrgAdmin", "Member"]);
@@ -89,7 +89,7 @@ public sealed class TenantMembershipTests : IDisposable
         // A revoked role must actually disappear. Diff-based updates are where stale grants
         // survive; this repository replaces the set wholesale.
         var tenantId = await SeedTenantAsync();
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         var repo = new TenantMembershipRepository(_db.Context);
 
         var membership = TenantMembership.Create(tenantId, userId, ["OrgAdmin"]);
@@ -107,7 +107,7 @@ public sealed class TenantMembershipTests : IDisposable
     public async Task A_user_cannot_hold_two_memberships_of_one_company()
     {
         var tenantId = await SeedTenantAsync();
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         var repo = new TenantMembershipRepository(_db.Context);
 
         await repo.AddAsync(TenantMembership.Create(tenantId, userId));
@@ -122,7 +122,7 @@ public sealed class TenantMembershipTests : IDisposable
     {
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         var repo = new TenantMembershipRepository(_db.Context);
 
         await repo.AddAsync(TenantMembership.Create(acme, userId, ["OrgAdmin"]));
@@ -140,7 +140,7 @@ public sealed class TenantMembershipTests : IDisposable
         // Otherwise a deleted company leaves rows behind that would keep granting access if
         // its id were ever reused.
         var tenantId = await SeedTenantAsync();
-        var membership = TenantMembership.Create(tenantId, Guid.NewGuid(), ["OrgAdmin"]);
+        var membership = TenantMembership.Create(tenantId, _db.NewUser(), ["OrgAdmin"]);
         membership.AssignApplicationRole("invoicing", "Approver");
         await new TenantMembershipRepository(_db.Context).AddAsync(membership);
 

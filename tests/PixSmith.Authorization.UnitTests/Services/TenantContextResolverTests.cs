@@ -49,7 +49,7 @@ public sealed class TenantContextResolverTests : IDisposable
     public async Task A_sole_membership_resolves_without_an_organization_parameter()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, true, "OrgAdmin");
 
         var context = await Build().ResolveForUserAsync(userId, "invoicing", null);
@@ -66,7 +66,7 @@ public sealed class TenantContextResolverTests : IDisposable
         // Picking one arbitrarily would issue a token whose authority the caller never chose.
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(acme.Id, userId, true, "Member");
         await SeedMembershipAsync(globex.Id, userId, true, "Member");
 
@@ -80,7 +80,7 @@ public sealed class TenantContextResolverTests : IDisposable
     {
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(acme.Id, userId, true, "OrgAdmin");
         await SeedMembershipAsync(globex.Id, userId, true, "Member");
 
@@ -97,7 +97,7 @@ public sealed class TenantContextResolverTests : IDisposable
         // Stage 4 omits the claims; stage 5 turns this into access_denied.
         var acme = await SeedTenantAsync("Acme Corp");
         var globex = await SeedTenantAsync("Globex");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(acme.Id, userId, true, "Member");
 
         Assert.Null(await Build().ResolveForUserAsync(userId, null, globex.Slug));
@@ -114,7 +114,7 @@ public sealed class TenantContextResolverTests : IDisposable
     public async Task An_inactive_membership_is_not_a_candidate()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, active: false, "OrgAdmin");
 
         Assert.Null(await Build().ResolveForUserAsync(userId, null, null));
@@ -125,7 +125,7 @@ public sealed class TenantContextResolverTests : IDisposable
     {
         // Suspending a customer must take effect without touching each membership row.
         var tenant = await SeedTenantAsync("Acme Corp", active: false);
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         await SeedMembershipAsync(tenant.Id, userId, true, "OrgAdmin");
 
         Assert.Null(await Build().ResolveForUserAsync(userId, null, null));
@@ -135,7 +135,7 @@ public sealed class TenantContextResolverTests : IDisposable
     public async Task Roles_are_resolved_for_the_requesting_application()
     {
         var tenant = await SeedTenantAsync("Acme Corp");
-        var userId = Guid.NewGuid();
+        var userId = _db.NewUser();
         var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
         membership.AssignApplicationRole("invoicing", "Approver");
         await new TenantMembershipRepository(_db.Context).AddAsync(membership);

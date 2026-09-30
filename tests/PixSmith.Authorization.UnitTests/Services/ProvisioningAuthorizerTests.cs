@@ -348,6 +348,29 @@ internal sealed class SqliteTestDb : IDisposable
         Context.Database.EnsureCreated();
     }
 
+    /// <summary>
+    /// Inserts a real Identity user and returns its id. TenantMemberships has a foreign key
+    /// to Users, so a membership cannot reference a user that does not exist — which is the
+    /// point of the constraint.
+    /// </summary>
+    public Guid NewUser(string? userName = null)
+    {
+        var id = Guid.NewGuid();
+        userName ??= "u" + id.ToString("N")[..10];
+
+        Context.Users.Add(new Microsoft.AspNetCore.Identity.IdentityUser<Guid>
+        {
+            Id = id,
+            UserName = userName,
+            NormalizedUserName = userName.ToUpperInvariant(),
+            Email = $"{userName}@test.local",
+            NormalizedEmail = $"{userName.ToUpperInvariant()}@TEST.LOCAL",
+        });
+        Context.SaveChanges();
+
+        return id;
+    }
+
     public void Dispose()
     {
         Context.Dispose();
