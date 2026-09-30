@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.API.Models;
+using PixSmith.Authorization.Repositories.Interfaces;
 
 namespace PixSmith.Authorization.API.Controllers;
 
@@ -25,17 +26,27 @@ namespace PixSmith.Authorization.API.Controllers;
 public sealed class LoginController(
 	SignInManager<IdentityUser<Guid>> signInManager,
 	UserManager<IdentityUser<Guid>> userManager,
+	ITenantRepository tenants,
 	ILogger<LoginController> logger) : Controller
 {
 	[HttpGet("~/Account/Login")]
-	public IActionResult Index(string? returnUrl = null) =>
-		View(new LoginInputModel { ReturnUrl = SafeReturnUrl(returnUrl) });
+	public async Task<IActionResult> Index(string? returnUrl = null)
+	{
+		var safe = SafeReturnUrl(returnUrl);
+
+		return View(new LoginInputModel
+		{
+			ReturnUrl = safe,
+			OrganizationName = await ResolveOrganizationNameAsync(safe),
+		});
+	}
 
 	[HttpPost("~/Account/Login")]
 	[ValidateAntiForgeryToken]
 	public async Task<IActionResult> Index(LoginInputModel model)
 	{
 		model.ReturnUrl = SafeReturnUrl(model.ReturnUrl);
+		model.OrganizationName = await ResolveOrganizationNameAsync(model.ReturnUrl);
 
 		if (!ModelState.IsValid)
 			return View(model);
@@ -89,6 +100,39 @@ public sealed class LoginController(
 
 	[HttpGet("~/Account/AccessDenied")]
 	public IActionResult AccessDenied() => View();
+
+	/// <summary>
+	/// Reads the <c>organization</c> parameter the calling application put on its authorization
+	/// request — it survives inside ReturnUrl — and resolves it to a real tenancy.
+	///
+	/// <para>
+	/// Resolving against the database rather than echoing the parameter is the point: the page
+	/// can only ever name a company that exists, so a crafted link cannot make it claim to be
+	/// signing the user in to somewhere it is not.
+	/// </para>
+	/// </summary>
+	private async Task<string?> ResolveOrganizationNameAsync(string? returnUrl)
+	{
+		if (string.IsNullOrWhiteSpace(returnUrl)) return null;
+
+		var query = returnUrl.IndexOf('?');
+		if (query < 0) return null;
+
+		var requested = Microsoft.AspNetCore.WebUtilities.QueryHelpers
+			.ParseQuery(returnUrl[query..])
+			.TryGetValue("organization", out var values) ? values.FirstOrDefault() : null;
+
+		if (string.IsNullOrWhiteSpace(requested)) return null;
+
+		var all = await tenants.GetAllAsync(HttpContext.RequestAborted);
+
+		var match = all.FirstOrDefault(t =>
+			t.IsActive
+			&& (string.Equals(t.Slug, requested, StringComparison.OrdinalIgnoreCase)
+				|| (Guid.TryParse(requested, out var id) && t.Id == id)));
+
+		return match?.Name;
+	}
 
 	/// <summary>
 	/// Drops non-local return URLs so a crafted link cannot turn the login page into an

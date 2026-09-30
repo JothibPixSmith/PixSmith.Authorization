@@ -70,7 +70,8 @@ public sealed record TenantMemberModel(
     bool IsActive,
     List<string> Roles,
     Dictionary<string, List<string>> ApplicationRoles,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Dictionary<string, string?> DeniedApplications);
 
 public sealed record TenantApplicationModel(
     Guid Id,
@@ -349,6 +350,7 @@ public interface ITenantApiService
     Task UpdateMemberAsync(Guid tenantId, Guid userId, bool isActive, List<string> roles,
                            Dictionary<string, List<string>> applicationRoles);
     Task RemoveMemberAsync(Guid tenantId, Guid userId);
+    Task SetMemberApplicationAccessAsync(Guid tenantId, Guid userId, string clientId, bool isDenied, string? reason);
 
     Task<IEnumerable<TenantApplicationModel>> GetApplicationsAsync(Guid tenantId);
     Task AddApplicationAsync(Guid tenantId, string clientId);
@@ -405,6 +407,15 @@ public sealed class TenantApiService(HttpClient http) : ITenantApiService
 
     public async Task RemoveMemberAsync(Guid tenantId, Guid userId) =>
         await ThrowOnErrorAsync(await http.DeleteAsync($"api/admin/tenants/{tenantId}/members/{userId}"));
+
+    public async Task SetMemberApplicationAccessAsync(
+        Guid tenantId, Guid userId, string clientId, bool isDenied, string? reason)
+    {
+        var response = await http.PutAsJsonAsync(
+            $"api/admin/tenants/{tenantId}/members/{userId}/applications/{clientId}",
+            new { IsDenied = isDenied, Reason = reason });
+        await ThrowOnErrorAsync(response);
+    }
 
     // ── Application subscriptions ────────────────────────────────────────────
 

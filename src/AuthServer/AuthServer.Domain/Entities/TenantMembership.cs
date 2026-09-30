@@ -19,6 +19,8 @@ public sealed class TenantMembership
     private readonly HashSet<string> _roles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _applicationRoles =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _deniedApplications =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private TenantMembership() { }
 
@@ -40,6 +42,12 @@ public sealed class TenantMembership
             kvp => kvp.Key,
             kvp => (IReadOnlyCollection<string>)kvp.Value,
             StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Applications this member is explicitly denied, keyed by client id, with an optional
+    /// administrative reason. A denial overrides the company's subscription.
+    /// </summary>
+    public IReadOnlyDictionary<string, string?> DeniedApplications => _deniedApplications;
 
     public static TenantMembership Create(Guid tenantId, Guid userId, IEnumerable<string>? roles = null)
     {
@@ -68,7 +76,8 @@ public sealed class TenantMembership
         bool isActive,
         DateTimeOffset createdAt,
         IEnumerable<string> roles,
-        IEnumerable<(string ClientId, string Role)> applicationRoles)
+        IEnumerable<(string ClientId, string Role)> applicationRoles,
+        IEnumerable<(string ClientId, string? Reason)>? deniedApplications = null)
     {
         var membership = new TenantMembership
         {
@@ -84,6 +93,9 @@ public sealed class TenantMembership
 
         foreach (var (clientId, role) in applicationRoles)
             membership.ApplicationRoleSet(clientId).Add(role);
+
+        foreach (var (clientId, reason) in deniedApplications ?? [])
+            membership._deniedApplications[clientId] = reason;
 
         return membership;
     }
@@ -109,6 +121,27 @@ public sealed class TenantMembership
         if (_applicationRoles.TryGetValue(clientId.Trim(), out var set))
             set.Remove(role.Trim());
     }
+
+    /// <summary>
+    /// Denies this member one application regardless of the company's subscription. Use for a
+    /// person who should not reach a particular system — suspending the subscription instead
+    /// would remove it for every colleague too.
+    /// </summary>
+    public void DenyApplication(string clientId, string? reason = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        _deniedApplications[clientId.Trim()] = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+    }
+
+    public void AllowApplication(string clientId)
+    {
+        if (!string.IsNullOrWhiteSpace(clientId))
+            _deniedApplications.Remove(clientId.Trim());
+    }
+
+    /// <summary>Whether this member is explicitly barred from an application.</summary>
+    public bool IsDeniedApplication(string? clientId) =>
+        !string.IsNullOrWhiteSpace(clientId) && _deniedApplications.ContainsKey(clientId.Trim());
 
     public void Activate() => IsActive = true;
     public void Deactivate() => IsActive = false;

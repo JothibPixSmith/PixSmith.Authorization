@@ -55,13 +55,12 @@ contains `PixSmith.Authorization.API.csproj`.
 | Project | Role |
 |---|---|
 | `PixSmith.Authorization.Domain` | Pure aggregates (`ApplicationUser`, `OAuthClient`), domain events, and `Result<T>` monad — zero external dependencies |
-| `AuthServer.Application` | Use-case DTOs, `IUserService` / `IOAuthClientService` interfaces, FluentValidation validators |
-| `AuthServer.Infrastructure` | EF Core + OpenIddict + ASP.NET Identity wiring; `OpenIddictSeeder` hosted service seeds default clients on startup |
+| `AuthServer.Infrastructure` | EF Core + OpenIddict + ASP.NET Identity wiring; `OpenIddictSeeder` hosted service seeds default clients, scopes and roles on startup |
 | `PixSmith.Authorization.API` | HTTP entry point — `ConnectController` (OIDC protocol), `AccountController` (login/SSO), `AdminController` (user & client management) |
 | `PixSmith.Authorization.DataContext` | `ApplicationDbContext` combining Identity + OpenIddict + custom tables (`UserProfile`, `OAuthClientRegistration`, `AuditLog`) |
 | `PixSmith.Authorization.Repositories` | EF Core implementations of `IUserRepository` / `IOAuthClientRepository` |
 | `PixSmith.Authorization.Services` | `UserService`, `OAuthClientService`, `PasswordHashingService`, `EmailService` (stub) |
-| `BlazorClient` | Blazor WASM SPA; uses Authorization Code + PKCE via `AddOidcAuthentication()` |
+| `BlazorClient` | Blazor WASM admin UI, served by the API at the same origin. Signs in with the **password grant** via `JwtAuthStateProvider` (not `AddOidcAuthentication`), stores tokens in `localStorage`, and reads claims from `/api/account/me` rather than parsing the token |
 
 ### Key design points
 
@@ -73,7 +72,13 @@ contains `PixSmith.Authorization.API.csproj`.
 
 **Error handling via Result<T>.** Domain methods return `Result<T>` instead of throwing exceptions. Infrastructure and service layers map these to HTTP responses in controllers.
 
-**Database auto-migrates on startup.** `EnsureCreatedAsync()` is called in `Program.cs` — development uses SQLite (`auth.db`). For production, swap the connection string to PostgreSQL or SQL Server.
+**Database migrates on startup.** `Program.cs` calls `db.Database.MigrateAsync()` before the host starts. `Database:Provider` selects SQLite (default, `auth.db`) or Postgres; migrations live in two provider-specific projects and **both must be generated** for any model change, or the other provider fails at runtime.
+
+**Tenancy is enforced.** A user reaches an application when they are an active member of an active company that subscribes to that client — checked at `/connect/authorize`, on the password grant, and on every refresh. Tokens carry `org_id`, `org_slug` and a plural `roles` claim (company roles); the singular `role` claim carries platform Identity roles and is separate. `TenantEnforcement:PlatformClients` exempts clients that administer the server itself. See `docs/MULTI-TENANCY.md`.
+
+**Administering the server needs both the `Admin` role and the `admin` scope.** Neither alone: the role without the scope lets any token an administrator holds administer, the scope without the role lets a machine client administer with no human involved.
+
+**Creating a tenancy requires offline signatures.** Mutating tenant endpoints demand an interactive human administrator plus a quorum of detached ECDSA signatures from keys held off the server. It fails closed when no keys are configured. See `docs/TENANT-PROVISIONING.md`.
 
 ### OIDC endpoints
 

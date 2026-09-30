@@ -97,6 +97,11 @@
                     Roles here apply within this company only. Platform roles are separate and do
                     not carry into a company context.
                 </p>
+                <p class="text-xs text-gray-500">
+                    Click an application to bar or restore that one member. A denial overrides the
+                    company's subscription — suspending the subscription instead would remove it
+                    for everyone.
+                </p>
             </div>
 
             <div class="flex gap-2">
@@ -121,7 +126,7 @@
             {
                 <table class="w-full text-sm">
                     <thead class="text-left text-xs text-gray-500 border-b">
-                        <tr><th class="py-2">User</th><th>Company roles</th><th>Status</th><th></th></tr>
+                        <tr><th class="py-2">User</th><th>Company roles</th><th>Application access</th><th>Status</th><th></th></tr>
                     </thead>
                     <tbody>
                     @foreach (var member in _members)
@@ -146,6 +151,28 @@
                                     @foreach (var role in member.Roles)
                                     {
                                         <span class="inline-block bg-blue-50 text-blue-700 rounded px-2 py-0.5 text-xs mr-1 mb-1">@role</span>
+                                    }
+                                }
+                            </td>
+                            <td class="py-2">
+                                @if (_applications.Count == 0)
+                                {
+                                    <span class="text-xs text-gray-400">no applications</span>
+                                }
+                                else
+                                {
+                                    @* A denial overrides the company subscription, for this person only. *@
+                                    @foreach (var app in _applications)
+                                    {
+                                        var denied = member.DeniedApplications.ContainsKey(app.ClientId);
+                                        var captured = app;
+                                        <button @onclick="() => ToggleMemberApplicationAsync(member, captured, !denied)"
+                                                title="@(denied ? $"Denied — click to restore access to {captured.ClientId}" : $"Allowed — click to deny access to {captured.ClientId}")"
+                                                class="inline-block rounded px-2 py-0.5 text-xs mr-1 mb-1 border @(denied
+                                                    ? "bg-red-50 text-red-700 border-red-200 line-through"
+                                                    : "bg-green-50 text-green-700 border-green-200")">
+                                            @(app.DisplayName ?? app.ClientId)
+                                        </button>
                                     }
                                 }
                             </td>
@@ -263,6 +290,12 @@
 
     private Task RemoveMemberAsync(TenantMemberModel member) =>
         RunAsync(() => TenantApi.RemoveMemberAsync(TenantId, member.UserId));
+
+    private Task ToggleMemberApplicationAsync(
+        TenantMemberModel member, TenantApplicationModel app, bool deny) =>
+        RunAsync(() => TenantApi.SetMemberApplicationAccessAsync(
+            TenantId, member.UserId, app.ClientId, deny,
+            deny ? "Denied from the admin UI." : null));
 
     private Task AddApplicationAsync() =>
         RunAsync(async () =>

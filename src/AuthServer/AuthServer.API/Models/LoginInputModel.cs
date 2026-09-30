@@ -15,4 +15,15 @@ public sealed class LoginInputModel
 	public bool RememberMe { get; set; }
 
 	public string? ReturnUrl { get; set; }
+
+	/// <summary>
+	/// Display name of the company the calling application asked to sign in to, so the page
+	/// can say which one rather than making the user work it out.
+	///
+	/// <para>
+	/// Always the name stored against a real tenancy, never text echoed from the query string —
+	/// otherwise a crafted link could make this page display any organisation it liked.
+	/// </para>
+	/// </summary>
+	public string? OrganizationName { get; set; }
 }

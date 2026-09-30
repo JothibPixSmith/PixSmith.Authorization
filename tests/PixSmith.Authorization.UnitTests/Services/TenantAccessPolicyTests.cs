@@ -158,6 +158,107 @@ public sealed class TenantAccessPolicyTests : IDisposable
         Assert.Contains("not a member of the requested organization", decision.Error);
     }
 
+    // ── Per-member denial ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_individually_denied_member_is_refused_a_subscribed_application()
+    {
+        var tenant = await SeedTenantAsync("Acme Corp");
+        var userId = Guid.NewGuid();
+        await SubscribeAsync(tenant.Id, "invoicing");
+
+        var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
+        membership.DenyApplication("invoicing", "Not authorised");
+        await new TenantMembershipRepository(_db.Context).AddAsync(membership);
+
+        var decision = await Build().EvaluateForUserAsync(userId, "invoicing", null);
+
+        Assert.False(decision.IsAllowed);
+        // The administrative reason must not reach the denied user.
+        Assert.DoesNotContain("Not authorised", decision.Error);
+    }
+
+    [Fact]
+    public async Task A_denial_affects_only_the_named_application()
+    {
+        var tenant = await SeedTenantAsync("Acme Corp");
+        var userId = Guid.NewGuid();
+        await SubscribeAsync(tenant.Id, "invoicing");
+        await SubscribeAsync(tenant.Id, "payroll");
+
+        var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
+        membership.DenyApplication("invoicing");
+        await new TenantMembershipRepository(_db.Context).AddAsync(membership);
+
+        var policy = Build();
+        Assert.False((await policy.EvaluateForUserAsync(userId, "invoicing", null)).IsAllowed);
+        Assert.True((await policy.EvaluateForUserAsync(userId, "payroll", null)).IsAllowed);
+    }
+
+    [Fact]
+    public async Task A_denial_affects_only_the_named_member()
+    {
+        // The whole reason a denial is per-member rather than a suspended subscription:
+        // colleagues must keep working.
+        var tenant = await SeedTenantAsync("Acme Corp");
+        var denied = Guid.NewGuid();
+        var colleague = Guid.NewGuid();
+        await SubscribeAsync(tenant.Id, "invoicing");
+
+        var repo = new TenantMembershipRepository(_db.Context);
+        var m1 = TenantMembership.Create(tenant.Id, denied, ["Member"]);
+        m1.DenyApplication("invoicing");
+        await repo.AddAsync(m1);
+        await repo.AddAsync(TenantMembership.Create(tenant.Id, colleague, ["Member"]));
+
+        var policy = Build();
+        Assert.False((await policy.EvaluateForUserAsync(denied, "invoicing", null)).IsAllowed);
+        Assert.True((await policy.EvaluateForUserAsync(colleague, "invoicing", null)).IsAllowed);
+    }
+
+    [Fact]
+    public async Task Restoring_access_reverses_a_denial()
+    {
+        var tenant = await SeedTenantAsync("Acme Corp");
+        var userId = Guid.NewGuid();
+        await SubscribeAsync(tenant.Id, "invoicing");
+
+        var repo = new TenantMembershipRepository(_db.Context);
+        var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
+        membership.DenyApplication("invoicing");
+        await repo.AddAsync(membership);
+
+        Assert.False((await Build().EvaluateForUserAsync(userId, "invoicing", null)).IsAllowed);
+
+        membership.AllowApplication("invoicing");
+        await repo.UpdateAsync(membership);
+
+        Assert.True((await Build().EvaluateForUserAsync(userId, "invoicing", null)).IsAllowed);
+    }
+
+    [Fact]
+    public async Task A_denial_survives_a_general_role_update()
+    {
+        // Denials are managed through their own endpoint; editing roles must not silently
+        // restore access someone deliberately removed.
+        var tenant = await SeedTenantAsync("Acme Corp");
+        var userId = Guid.NewGuid();
+        await SubscribeAsync(tenant.Id, "invoicing");
+
+        var repo = new TenantMembershipRepository(_db.Context);
+        var membership = TenantMembership.Create(tenant.Id, userId, ["Member"]);
+        membership.DenyApplication("invoicing");
+        await repo.AddAsync(membership);
+
+        var reloaded = await repo.GetAsync(tenant.Id, userId);
+        Assert.True(reloaded!.IsDeniedApplication("invoicing"));
+
+        reloaded.AssignRole("Auditor");
+        await repo.UpdateAsync(reloaded);
+
+        Assert.False((await Build().EvaluateForUserAsync(userId, "invoicing", null)).IsAllowed);
+    }
+
     // ── Platform clients ──────────────────────────────────────────────────────
 
     [Fact]

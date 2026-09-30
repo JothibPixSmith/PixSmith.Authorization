@@ -23,8 +23,30 @@ public interface ITenantAccessService
     Task<Result<IEnumerable<UserMembershipDto>>> GetMembershipsForUserAsync(Guid userId, CancellationToken ct = default);
 
     Task<Result<TenantMemberDto>> AddMemberAsync(Guid tenantId, AddTenantMemberRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds an existing user to a company by email address — what self-service invitation needs,
+    /// since an administrator knows a colleague's address rather than their id.
+    ///
+    /// <para>
+    /// Fails distinguishably when no account exists, so the caller can tell "already a member"
+    /// from "they need to register first". Issuing an email invitation to someone with no
+    /// account is a further step and is not implemented.
+    /// </para>
+    /// </summary>
+    Task<Result<TenantMemberDto>> InviteMemberByEmailAsync(
+        Guid tenantId, InviteMemberRequest request, CancellationToken ct = default);
     Task<Result> UpdateMemberAsync(Guid tenantId, Guid userId, UpdateTenantMemberRequest request, CancellationToken ct = default);
     Task<Result> RemoveMemberAsync(Guid tenantId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Bars or restores one member's access to one application, overriding the company's
+    /// subscription. Use for a person who should not reach a particular system — suspending
+    /// the subscription would remove it for every colleague too.
+    /// </summary>
+    Task<Result> SetMemberApplicationAccessAsync(
+        Guid tenantId, Guid userId, string clientId,
+        SetMemberApplicationAccessRequest request, CancellationToken ct = default);
 
     // ── Application subscriptions ────────────────────────────────────────────
 

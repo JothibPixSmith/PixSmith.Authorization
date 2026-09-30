@@ -402,6 +402,21 @@ public sealed class AdminController(
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 
+    /// <summary>
+    /// Bars or restores one member's access to one application. A denial overrides the
+    /// company's subscription, so it affects that person only.
+    /// </summary>
+    [HttpPut("tenants/{tenantId:guid}/members/{userId:guid}/applications/{clientId}")]
+    public async Task<IActionResult> SetTenantMemberApplicationAccess(
+        Guid tenantId, Guid userId, string clientId,
+        [FromBody] SetMemberApplicationAccessRequest request, CancellationToken ct)
+    {
+        var result = await tenantAccessService
+            .SetMemberApplicationAccessAsync(tenantId, userId, clientId, request, ct);
+
+        return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
+    }
+
     [HttpDelete("tenants/{tenantId:guid}/members/{userId:guid}")]
     public async Task<IActionResult> RemoveTenantMember(Guid tenantId, Guid userId, CancellationToken ct)
     {

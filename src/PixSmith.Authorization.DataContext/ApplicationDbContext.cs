@@ -25,6 +25,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<TenantMembershipRoleRecord> TenantMembershipRoles => Set<TenantMembershipRoleRecord>();
     public DbSet<MembershipApplicationRoleRecord> MembershipApplicationRoles => Set<MembershipApplicationRoleRecord>();
     public DbSet<TenantApplicationRecord> TenantApplications => Set<TenantApplicationRecord>();
+    public DbSet<MembershipApplicationDenialRecord> MembershipApplicationDenials => Set<MembershipApplicationDenialRecord>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -112,6 +113,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.HasIndex(x => x.UserId);
             e.HasOne<TenantRecord>().WithMany()
                 .HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+
+            // Without this, deleting a user leaves their memberships behind — rows that still
+            // describe access and would grant it again if the id were ever reused. The tenant
+            // side was already covered; this closes the user side.
+            e.HasOne<IdentityUser<Guid>>().WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<TenantMembershipRoleRecord>(e =>
@@ -129,6 +136,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             e.Property(x => x.ClientId).HasMaxLength(100).IsRequired();
             e.Property(x => x.Role).HasMaxLength(100).IsRequired();
             e.HasIndex(x => new { x.MembershipId, x.ClientId, x.Role }).IsUnique();
+            e.HasOne<TenantMembershipRecord>().WithMany()
+                .HasForeignKey(x => x.MembershipId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<MembershipApplicationDenialRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ClientId).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.HasIndex(x => new { x.MembershipId, x.ClientId }).IsUnique();
             e.HasOne<TenantMembershipRecord>().WithMany()
                 .HasForeignKey(x => x.MembershipId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -242,6 +259,25 @@ public class MembershipApplicationRoleRecord
 }
 
 /// <summary>A company's subscription to an application, by OpenIddict client id.</summary>
+/// <summary>
+/// Denies one member an application their company subscribes to.
+///
+/// <para>
+/// An exception to the nesting rule, and deliberately a separate table rather than a flag on
+/// the subscription: a denial is about one person, and expressing it as absence-of-a-grant
+/// would be impossible when access is inherited from the company.
+/// </para>
+/// </summary>
+public class MembershipApplicationDenialRecord
+{
+    public Guid Id { get; set; }
+    public Guid MembershipId { get; set; }
+    public string ClientId { get; set; } = string.Empty;
+    /// <summary>Optional note shown to administrators — never returned to the denied user.</summary>
+    public string? Reason { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class TenantApplicationRecord
 {
     public Guid Id { get; set; }

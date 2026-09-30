@@ -78,6 +78,26 @@ public sealed class TenantAccessService(
         }
     }
 
+    public async Task<Result<TenantMemberDto>> InviteMemberByEmailAsync(
+        Guid tenantId, InviteMemberRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return Result<TenantMemberDto>.Failure("An email address is required.");
+
+        var user = await userManager.FindByEmailAsync(request.Email.Trim());
+
+        if (user is null)
+        {
+            // Distinguishable on purpose: the caller needs to know the person must register,
+            // not that they typed the address wrong.
+            return Result<TenantMemberDto>.Failure(
+                $"No account exists for '{request.Email.Trim()}'. They need to register before " +
+                "they can be added to an organization.");
+        }
+
+        return await AddMemberAsync(tenantId, new AddTenantMemberRequest(user.Id, request.Roles), ct);
+    }
+
     public async Task<Result> UpdateMemberAsync(
         Guid tenantId, Guid userId, UpdateTenantMemberRequest request, CancellationToken ct = default)
     {
@@ -92,7 +112,10 @@ public sealed class TenantAccessService(
                 membership.Id, tenantId, userId, request.IsActive, membership.CreatedAt,
                 request.Roles ?? [],
                 (request.ApplicationRoles ?? [])
-                    .SelectMany(kvp => kvp.Value.Select(role => (kvp.Key, role))));
+                    .SelectMany(kvp => kvp.Value.Select(role => (kvp.Key, role))),
+                // Denials are managed through their own endpoint; a general role update must
+                // not silently restore access someone deliberately removed.
+                membership.DeniedApplications.Select(kvp => (kvp.Key, kvp.Value)));
 
             await memberships.UpdateAsync(replacement, ct);
             return Result.Success();
@@ -101,6 +124,23 @@ public sealed class TenantAccessService(
         {
             return Result.Failure(ex.Message);
         }
+    }
+
+    public async Task<Result> SetMemberApplicationAccessAsync(
+        Guid tenantId, Guid userId, string clientId,
+        SetMemberApplicationAccessRequest request, CancellationToken ct = default)
+    {
+        var membership = await memberships.GetAsync(tenantId, userId, ct);
+        if (membership is null) return Result.Failure("Membership not found.");
+
+        if (string.IsNullOrWhiteSpace(clientId))
+            return Result.Failure("A client id is required.");
+
+        if (request.IsDenied) membership.DenyApplication(clientId, request.Reason);
+        else membership.AllowApplication(clientId);
+
+        await memberships.UpdateAsync(membership, ct);
+        return Result.Success();
     }
 
     public async Task<Result> RemoveMemberAsync(Guid tenantId, Guid userId, CancellationToken ct = default)
@@ -206,7 +246,8 @@ public sealed class TenantAccessService(
             membership.ApplicationRoles.ToDictionary(
                 kvp => kvp.Key,
                 kvp => (IReadOnlyList<string>)[.. kvp.Value]),
-            membership.CreatedAt);
+            membership.CreatedAt,
+            membership.DeniedApplications.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
     }
 
     private async Task<string?> DisplayNameAsync(string clientId, CancellationToken ct)

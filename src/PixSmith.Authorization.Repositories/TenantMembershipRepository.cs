@@ -68,6 +68,8 @@ public sealed class TenantMembershipRepository(ApplicationDbContext context) : I
             context.TenantMembershipRoles.Where(r => r.MembershipId == membership.Id));
         context.MembershipApplicationRoles.RemoveRange(
             context.MembershipApplicationRoles.Where(r => r.MembershipId == membership.Id));
+        context.MembershipApplicationDenials.RemoveRange(
+            context.MembershipApplicationDenials.Where(d => d.MembershipId == membership.Id));
 
         WriteRoles(membership);
         await context.SaveChangesAsync(ct);
@@ -94,6 +96,18 @@ public sealed class TenantMembershipRepository(ApplicationDbContext context) : I
                 Id = Guid.NewGuid(),
                 MembershipId = membership.Id,
                 Role = role,
+            });
+        }
+
+        foreach (var (clientId, reason) in membership.DeniedApplications)
+        {
+            context.MembershipApplicationDenials.Add(new MembershipApplicationDenialRecord
+            {
+                Id = Guid.NewGuid(),
+                MembershipId = membership.Id,
+                ClientId = clientId,
+                Reason = reason,
+                CreatedAt = DateTimeOffset.UtcNow,
             });
         }
 
@@ -124,9 +138,15 @@ public sealed class TenantMembershipRepository(ApplicationDbContext context) : I
             .Select(r => new { r.ClientId, r.Role })
             .ToListAsync(ct);
 
+        var denials = await context.MembershipApplicationDenials
+            .Where(d => d.MembershipId == record.Id)
+            .Select(d => new { d.ClientId, d.Reason })
+            .ToListAsync(ct);
+
         return TenantMembership.Reconstitute(
             record.Id, record.TenantId, record.UserId, record.IsActive, record.CreatedAt,
-            roles, appRoles.Select(r => (r.ClientId, r.Role)));
+            roles, appRoles.Select(r => (r.ClientId, r.Role)),
+            denials.Select(d => (d.ClientId, d.Reason)));
     }
 
     /// <summary>
@@ -154,9 +174,17 @@ public sealed class TenantMembershipRepository(ApplicationDbContext context) : I
             .GroupBy(r => r.MembershipId)
             .ToDictionary(g => g.Key, g => g.Select(r => (r.ClientId, r.Role)).ToList());
 
+        var denials = (await context.MembershipApplicationDenials
+                .Where(d => ids.Contains(d.MembershipId))
+                .Select(d => new { d.MembershipId, d.ClientId, d.Reason })
+                .ToListAsync(ct))
+            .GroupBy(d => d.MembershipId)
+            .ToDictionary(g => g.Key, g => g.Select(d => (d.ClientId, d.Reason)).ToList());
+
         return records.Select(record => TenantMembership.Reconstitute(
             record.Id, record.TenantId, record.UserId, record.IsActive, record.CreatedAt,
             roles.GetValueOrDefault(record.Id, []),
-            appRoles.GetValueOrDefault(record.Id, [])));
+            appRoles.GetValueOrDefault(record.Id, []),
+            denials.GetValueOrDefault(record.Id, [])));
     }
 }

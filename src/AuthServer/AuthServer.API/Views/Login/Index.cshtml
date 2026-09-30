@@ -8,7 +8,17 @@
     <div class="text-center space-y-1">
         <div class="text-4xl">🔐</div>
         <h1 class="text-2xl font-bold text-gray-800">Welcome back</h1>
-        <p class="text-sm text-gray-500">Sign in to continue</p>
+        @if (!string.IsNullOrWhiteSpace(Model.OrganizationName))
+        {
+            @* The company the calling application asked for, resolved against a real tenancy. *@
+            <p class="text-sm text-gray-500">
+                Sign in to <span class="font-semibold text-gray-700">@Model.OrganizationName</span>
+            </p>
+        }
+        else
+        {
+            <p class="text-sm text-gray-500">Sign in to continue</p>
+        }
     </div>
 
     <div asp-validation-summary="All"

@@ -15,7 +15,7 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
                 {
@@ -496,6 +496,35 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.ToTable("EmailOutboxMessages");
                 });
 
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationDenialRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId", "ClientId")
+                        .IsUnique();
+
+                    b.ToTable("MembershipApplicationDenials");
+                });
+
             modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationRoleRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -872,6 +901,15 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.Navigation("Authorization");
                 });
 
+            modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationDenialRecord", b =>
+                {
+                    b.HasOne("PixSmith.Authorization.DataContext.TenantMembershipRecord", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PixSmith.Authorization.DataContext.MembershipApplicationRoleRecord", b =>
                 {
                     b.HasOne("PixSmith.Authorization.DataContext.TenantMembershipRecord", null)
@@ -895,6 +933,12 @@ namespace PixSmith.Authorization.DataContext.Migrations.Sqlite
                     b.HasOne("PixSmith.Authorization.DataContext.TenantRecord", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser<System.Guid>", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

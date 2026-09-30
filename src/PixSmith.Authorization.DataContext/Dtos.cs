@@ -210,7 +210,15 @@ public sealed record TenantMemberDto(
     bool IsActive,
     IReadOnlyList<string> Roles,
     IReadOnlyDictionary<string, IReadOnlyList<string>> ApplicationRoles,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    /// <summary>
+    /// Applications this member is individually barred from, overriding the company's
+    /// subscription. Keyed by client id; the value is an administrative note.
+    /// </summary>
+    IReadOnlyDictionary<string, string?> DeniedApplications);
+
+/// <summary>Bar or restore one member's access to one application.</summary>
+public sealed record SetMemberApplicationAccessRequest(bool IsDenied, string? Reason);
 
 /// <summary>One company a user belongs to — the data behind a company picker.</summary>
 public sealed record UserMembershipDto(
@@ -221,6 +229,9 @@ public sealed record UserMembershipDto(
     bool TenantIsActive,
     bool IsActive,
     IReadOnlyList<string> Roles);
+
+/// <summary>Invite an existing account into a company by email address.</summary>
+public sealed record InviteMemberRequest(string Email, List<string> Roles);
 
 public sealed record AddTenantMemberRequest(
     Guid UserId,

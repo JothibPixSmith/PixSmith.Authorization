@@ -27,6 +27,19 @@ public sealed class TenantAccessPolicy(
         if (context is null)
             return TenantAccessDecision.Deny(await ExplainUnresolvedAsync(userId, organization, ct));
 
+        // An individual denial overrides the company's subscription. Checked before the
+        // subscription so a denied member gets the same answer whether or not their company
+        // happens to subscribe — the reason is never disclosed to them.
+        var membership = await memberships.GetAsync(context.TenantId, userId, ct);
+        if (membership is not null && membership.IsDeniedApplication(clientId))
+        {
+            logger.LogInformation(
+                "Access denied: user {UserId} is individually denied client '{ClientId}' in '{Tenant}'.",
+                userId, clientId, context.Slug);
+
+            return TenantAccessDecision.Deny("You do not have access to this application.");
+        }
+
         // The nesting rule: access is derived from the company's subscription, never granted
         // to the user directly.
         if (!await subscriptions.IsSubscribedAsync(context.TenantId, clientId ?? string.Empty, ct))
