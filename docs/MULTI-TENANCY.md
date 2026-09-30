@@ -1,8 +1,9 @@
 # Multi-Tenancy Design
 
-**Status: stages 1–3 built, 4–6 outstanding.** The schema, admin API and backfill exist; the
-authorization path does not read any of it yet. A token issued today still carries no `org_id`,
-and no sign-in is refused on tenancy grounds. See the [staging table](#suggested-staging).
+**Status: stages 1–5 built, 6 outstanding.** Tokens carry `org_id`, `org_slug` and `roles`,
+and the nesting rule is enforced: a member may reach an application when their company
+subscribes to it, checked at `/connect/authorize` and again on every refresh. Only audience
+isolation (stage 6) remains. See the [staging table](#suggested-staging).
 
 This describes how to introduce three tiers of user — platform, company, application — using a
 single identity, without inventing anything OAuth 2.0 and OpenID Connect do not already support.
@@ -88,6 +89,14 @@ roles = TenantMembershipRoles(user, org)
 Resolving to one claim matters: a resource server should never have to read three role claims and
 re-derive precedence. That logic lives in `ConnectService`, once, where it can be tested.
 
+> **Implementation note — the claim is `roles`, not `role`.** This document originally implied
+> reusing the existing singular `role` claim. Stage 4 deliberately did not: the `AdminAccess`
+> policy reads `role` for `"Admin"`, and an administrator's *company* roles are `Member` and
+> `OrgAdmin`. Overloading `role` would have locked administrators out of the admin API the
+> moment a company context resolved. Company roles therefore use the plural `roles` claim —
+> which is the name RFC 9068 actually registers — while `role` continues to carry platform
+> roles unchanged. `role` can be retired once no resource server depends on it.
+
 ### Platform roles are deliberately excluded
 
 The global Identity roles (`Admin`) do **not** flow into a company-context token.
@@ -154,6 +163,22 @@ membership and subscription, and to re-resolve roles for the org carried in the 
 Without this, revoking a membership does nothing until every outstanding refresh token expires.
 With it, revocation takes effect at the next refresh.
 
+### Platform clients are exempt
+
+`TenantEnforcement:PlatformClients` lists clients that administer the auth server itself rather
+than a company's data — the admin UI above all. They skip the membership and subscription
+checks, though a company context is still attached when one resolves.
+
+The exemption exists because "administer the authorization server" is not a tenant-scoped
+activity. Without it, platform staff would need a membership of some company merely to reach
+the admin UI — which would make membership mean two different things and hand every
+administrator standing access inside a customer's tenancy, the exact property
+[the roles section](#platform-roles-are-deliberately-excluded) exists to prevent.
+
+It lives in configuration, not the database: an exemption from an access-control check should
+not be editable by anything holding only a database connection. Keep the list short, and never
+add a customer-facing client to it.
+
 ### Client credentials
 
 No user, so there is no membership to consult. A machine client belongs to exactly one company:
@@ -177,9 +202,20 @@ This design forces a fix that is currently outstanding. `EnsureScopeAsync` in
 hardcodes `Resources = { "resource-server" }`, so every scope maps to the same audience and a token
 minted for one application is audience-valid at every other.
 
-With per-application entitlements that becomes a real boundary rather than a theoretical one: give
-each application its own scope and resource name, so `aud` identifies one API. Take the resource
-name as a parameter instead of hardcoding it.
+That hardcode is now removed, and scopes are managed at runtime through
+`/api/admin/oidc-scopes` so onboarding an application needs no redeploy. A scope stored in the
+database works without being listed in `RegisterScopes()` at startup — verified — which is what
+makes runtime management viable.
+
+Isolation arrives in three steps, and only the third delivers it:
+
+1. **Additive** — create the per-application scope and grant it *alongside* the existing `api`.
+   Tokens carry both audiences, so nothing breaks. ✅ done for `jamtools.api`.
+2. **Migrate** — the resource server switches to the new audience. Still passing, because the
+   token carries both.
+3. **Remove** — drop `api` from the client, leaving one audience.
+
+Stopping after step 2 leaves every token still audience-valid at every other application.
 
 ---
 
@@ -226,9 +262,9 @@ Each stage is independently shippable and leaves the system working.
 | 1 | ✅ **Done** — schema, EF entities, repositories, both migrations | Low — nothing reads it yet |
 | 2 | ✅ **Done** — admin API + Blazor pages for memberships and subscriptions | Low |
 | 3 | ✅ **Done** — backfill seeder (default tenant, existing users and clients) | Low, but do it before stage 4 |
-| 4 | Claim emission — `org_id`, `org_slug`, `roles` — plus `GetDestinations` entries | Medium: see the gotcha below |
-| 5 | Authorize-time enforcement + refresh re-validation | **High** — this is where sign-ins start being refused |
-| 6 | Per-application scopes and resources (audience isolation) | Medium — needs integrated apps to update their expected `aud` |
+| 4 | ✅ **Done** — claim emission: `org_id`, `org_slug`, `roles`, plus `GetDestinations` entries | Medium: see the gotcha below |
+| 5 | ✅ **Done** — authorize-time enforcement + refresh re-validation | **High** — this is where sign-ins start being refused |
+| 6 | 🟡 **Step 1 of 3 done** — scope management + per-app scopes exist and are additive; integrated apps have not yet migrated their `aud` | Medium — needs integrated apps to update their expected `aud` |
 
 ### The gotcha in stage 4
 

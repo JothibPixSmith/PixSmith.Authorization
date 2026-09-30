@@ -52,7 +52,35 @@ options.RegisterScopes(
 await EnsureScopeAsync(scopeManager, "myapp.api", "My App API", cancellationToken);
 ```
 
-> **Audience caveat.** `EnsureScopeAsync` hardcodes `Resources = { "resource-server" }`, so *every* scope currently maps to the same `aud`. That means a token minted for one app is accepted by any other app that validates the same audience. If you want real audience isolation, give each app its own resource name — change `EnsureScopeAsync` to take the resource as a parameter and pass `"myapp"` here. Do this before you have a third app.
+> **Scopes are managed at runtime, not seeded in code.** Create one per application through the
+admin API — a scope's `resources` become the `aud` of every token granted it, which is what
+makes audience validation mean something:
+
+```bash
+curl -X POST https://localhost:7100/api/admin/oidc-scopes \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"myapp.api","displayName":"My App API","resources":["myapp-api"]}'
+```
+
+Then grant `myapp.api` to your client. Your resource server validates
+`AddAudiences("myapp-api")`, and a token minted for another application is no longer
+audience-valid at yours.
+
+The built-in `api` and `admin` scopes both map to the shared `resource-server` audience and are
+read-only — changing them would alter the `aud` of tokens that deployed integrations already
+validate. Use a per-application scope instead.
+
+**Migrating an existing integration without downtime.** A token carries one audience per
+granted scope, so both can be live at once:
+
+1. Create `myapp.api` and grant it to the client *alongside* the existing `api`. Tokens now
+   carry `aud: ["resource-server", "myapp-api"]` — old validation still passes, nothing breaks.
+2. Switch the resource server to `AddAudiences("myapp-api")`. Still passing, because the token
+   carries both.
+3. Remove `api` from the client. `aud` becomes `["myapp-api"]` alone.
+
+Step 3 is the one that delivers the isolation — it is easy to stop after step 2 and believe
+you are done.
 
 ---
 
