@@ -1,0 +1,84 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PixSmith.Authorization.Repositories.Interfaces;
+using PixSmith.Authorization.Services.Interfaces;
+
+namespace PixSmith.Authorization.Services;
+
+public sealed class TenantAccessPolicy(
+    ITenantContextResolver resolver,
+    ITenantMembershipRepository memberships,
+    ITenantRepository tenants,
+    ITenantApplicationRepository subscriptions,
+    IOptions<TenantEnforcementOptions> options,
+    ILogger<TenantAccessPolicy> logger) : ITenantAccessPolicy
+{
+    public async Task<TenantAccessDecision> EvaluateForUserAsync(
+        Guid userId, string? clientId, string? organization, CancellationToken ct = default)
+    {
+        var context = await resolver.ResolveForUserAsync(userId, clientId, organization, ct);
+
+        // Platform clients administer the auth server itself and are not tenant-scoped. A
+        // company context is still attached when one happens to resolve, so an administrator
+        // who is also a member gets the same claims as anywhere else.
+        if (options.Value.IsPlatformClient(clientId))
+            return TenantAccessDecision.Allow(context);
+
+        if (context is null)
+            return TenantAccessDecision.Deny(await ExplainUnresolvedAsync(userId, organization, ct));
+
+        // The nesting rule: access is derived from the company's subscription, never granted
+        // to the user directly.
+        if (!await subscriptions.IsSubscribedAsync(context.TenantId, clientId ?? string.Empty, ct))
+        {
+            logger.LogInformation(
+                "Access denied: user {UserId} is a member of '{Tenant}', which is not subscribed " +
+                "to client '{ClientId}'.", userId, context.Slug, clientId);
+
+            return TenantAccessDecision.Deny(
+                $"'{context.Name}' is not subscribed to this application.");
+        }
+
+        return TenantAccessDecision.Allow(context);
+    }
+
+    /// <summary>
+    /// Turns an unresolved context into something the user can act on. Only ever describes
+    /// the caller's own memberships — never reveals whether some other company exists.
+    /// </summary>
+    private async Task<string> ExplainUnresolvedAsync(
+        Guid userId, string? organization, CancellationToken ct)
+    {
+        var active = new List<string>();
+
+        foreach (var membership in await memberships.GetForUserAsync(userId, ct))
+        {
+            if (!membership.IsActive) continue;
+            var tenant = await tenants.GetByIdAsync(membership.TenantId, ct);
+            if (tenant is { IsActive: true }) active.Add(tenant.Slug);
+        }
+
+        if (active.Count == 0)
+        {
+            logger.LogInformation("Access denied: user {UserId} holds no active membership.", userId);
+            return "Your account is not a member of any active organization.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(organization))
+        {
+            logger.LogInformation(
+                "Access denied: user {UserId} requested organization '{Organization}' without an " +
+                "active membership of it.", userId, organization);
+            return "You are not a member of the requested organization.";
+        }
+
+        // Several memberships and no choice made. Listing the caller's own organizations is
+        // what makes this recoverable rather than a dead end.
+        logger.LogInformation(
+            "Access denied: user {UserId} belongs to {Count} organizations and specified none.",
+            userId, active.Count);
+
+        return "Specify which organization to sign in to using the 'organization' parameter. " +
+               $"Yours: {string.Join(", ", active.Order())}.";
+    }
+}

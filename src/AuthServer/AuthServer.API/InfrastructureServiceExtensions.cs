@@ -252,6 +252,8 @@ public static class InfrastructureServiceExtensions
 			configuration.GetSection(TenantProvisioningOptions.SectionName));
 		services.Configure<TenantBackfillOptions>(
 			configuration.GetSection(TenantBackfillOptions.SectionName));
+		services.Configure<TenantEnforcementOptions>(
+			configuration.GetSection(TenantEnforcementOptions.SectionName));
 		services.TryAddSingleton(TimeProvider.System);
 		services.AddScoped<IProvisioningAuthorizer, ProvisioningAuthorizer>();
 
@@ -265,6 +267,8 @@ public static class InfrastructureServiceExtensions
 		services.AddTransient<IUserService, UserService>();
 		services.AddTransient<IAccountService, AccountService>();
 		services.AddTransient<IAdminService, AdminService>();
+		services.AddTransient<ITenantContextResolver, TenantContextResolver>();
+		services.AddTransient<ITenantAccessPolicy, TenantAccessPolicy>();
 		services.AddTransient<IConnectService, ConnectService>();
 		services.AddTransient<IOAuthClientService, OAuthClientService>();
 		services.AddTransient<ITenantService, TenantService>();

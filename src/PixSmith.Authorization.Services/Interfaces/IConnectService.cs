@@ -25,9 +25,24 @@ public interface IConnectService
     /// Builds a fully populated ClaimsIdentity with scopes, resources, and per-claim
     /// destinations for the authorization-code and password grant flows.
     /// </summary>
+    /// <summary>
+    /// Decides whether this user may obtain a token for this application, and in which company
+    /// context. Callers must honour a denial by returning <c>access_denied</c> — building an
+    /// identity anyway would issue a token the policy just refused.
+    /// </summary>
+    Task<TenantAccessDecision> AuthorizeTenantAccessAsync(
+        IdentityUser<Guid> user, string? clientId, string? organization, CancellationToken ct = default);
+
+    /// <param name="clientId">Determines which application-scoped roles apply.</param>
+    /// <param name="context">
+    /// The company context, already resolved and authorized by <c>ITenantAccessPolicy</c>.
+    /// Null means no company applies — a platform client, or a machine identity.
+    /// </param>
     Task<ClaimsIdentity> BuildIdentityAsync(
         IdentityUser<Guid> user,
         IEnumerable<string> requestedScopes,
+        string? clientId = null,
+        TenantContext? context = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -37,6 +52,8 @@ public interface IConnectService
     Task<ClaimsIdentity> RefreshIdentityAsync(
         IdentityUser<Guid> user,
         ClaimsPrincipal existingPrincipal,
+        string? clientId = null,
+        TenantContext? context = null,
         CancellationToken ct = default);
 
     /// <summary>

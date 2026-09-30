@@ -41,7 +41,22 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 		var user = await connectService.FindUserByIdentityPrincipalAsync(result.Principal!);
 		if (user is null) throw new InvalidOperationException("User not found.");
 
-		var identity = await connectService.BuildIdentityAsync(user, request.GetScopes());
+		var organization = (string?)request.GetParameter("organization");
+
+		var decision = await connectService.AuthorizeTenantAccessAsync(
+			user, request.ClientId, organization);
+
+		if (!decision.IsAllowed)
+		{
+			return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+			{
+				[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+				[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = decision.Error,
+			}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+		}
+
+		var identity = await connectService.BuildIdentityAsync(
+			user, request.GetScopes(), request.ClientId, decision.Context);
 		return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 	}
 
@@ -62,7 +77,25 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 			if (user is null)
 				return Forbid(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
-			var identity = await connectService.RefreshIdentityAsync(user, principal!);
+			// The company travels in the principal; passing the client id lets any
+			// application-scoped roles be re-resolved for this client.
+			// Re-evaluated on every refresh. A membership revoked since the original
+			// authorization takes effect here rather than at token expiry.
+			var organization = principal!.FindFirst("org_id")?.Value;
+			var decision = await connectService.AuthorizeTenantAccessAsync(
+				user, request.ClientId, organization);
+
+			if (!decision.IsAllowed)
+			{
+				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = decision.Error,
+				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+			}
+
+			var identity = await connectService.RefreshIdentityAsync(
+				user, principal!, request.ClientId, decision.Context);
 			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 
@@ -84,7 +117,24 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = validation.Error
 				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
-			var identity = await connectService.BuildIdentityAsync(user, request.GetScopes());
+			// OpenIddict passes unrecognised parameters through, which is how a company is
+			// selected without inventing a non-standard endpoint.
+			var organization = (string?)request.GetParameter("organization");
+
+			var decision = await connectService.AuthorizeTenantAccessAsync(
+				user, request.ClientId, organization);
+
+			if (!decision.IsAllowed)
+			{
+				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = decision.Error,
+				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+			}
+
+			var identity = await connectService.BuildIdentityAsync(
+				user, request.GetScopes(), request.ClientId, decision.Context);
 			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 

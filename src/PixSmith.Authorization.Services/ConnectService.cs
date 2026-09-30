@@ -12,7 +12,9 @@ public sealed class ConnectService(
     UserManager<IdentityUser<Guid>> userManager,
     SignInManager<IdentityUser<Guid>> signInManager,
     IOpenIddictApplicationManager applicationManager,
-    IOpenIddictScopeManager scopeManager) : IConnectService
+    IOpenIddictScopeManager scopeManager,
+    ITenantContextResolver tenantContextResolver,
+    ITenantAccessPolicy tenantAccessPolicy) : IConnectService
 {
     // ── User resolution ───────────────────────────────────────────────────────
 
@@ -44,11 +46,25 @@ public sealed class ConnectService(
         return Result.Failure("Invalid credentials.");
     }
 
+    // ── Tenant access ─────────────────────────────────────────────────────────
+
+    public async Task<TenantAccessDecision> AuthorizeTenantAccessAsync(
+        IdentityUser<Guid> user, string? clientId, string? organization, CancellationToken ct = default)
+    {
+        var id = await userManager.GetUserIdAsync(user);
+
+        return Guid.TryParse(id, out var userId)
+            ? await tenantAccessPolicy.EvaluateForUserAsync(userId, clientId, organization, ct)
+            : TenantAccessDecision.Deny("The signed-in account could not be identified.");
+    }
+
     // ── Identity building ─────────────────────────────────────────────────────
 
     public async Task<ClaimsIdentity> BuildIdentityAsync(
         IdentityUser<Guid> user,
         IEnumerable<string> requestedScopes,
+        string? clientId = null,
+        TenantContext? context = null,
         CancellationToken ct = default)
     {
         var identity = new ClaimsIdentity(
@@ -63,6 +79,8 @@ public sealed class ConnectService(
         foreach (var role in await userManager.GetRolesAsync(user))
             identity.AddClaim(new Claim(Claims.Role, role));
 
+        ApplyTenantContext(identity, context);
+
         identity.SetScopes(requestedScopes);
         identity.SetResources(
             await scopeManager.ListResourcesAsync(identity.GetScopes(), ct).ToListAsync());
@@ -74,6 +92,8 @@ public sealed class ConnectService(
     public async Task<ClaimsIdentity> RefreshIdentityAsync(
         IdentityUser<Guid> user,
         ClaimsPrincipal existingPrincipal,
+        string? clientId = null,
+        TenantContext? context = null,
         CancellationToken ct = default)
     {
         var identity = new ClaimsIdentity(
@@ -88,6 +108,13 @@ public sealed class ConnectService(
         identity.RemoveClaims(Claims.Role);
         foreach (var role in await userManager.GetRolesAsync(user))
             identity.AddClaim(new Claim(Claims.Role, role));
+
+        // Re-evaluated by the caller on every refresh rather than carried over from the old
+        // principal. Without that, revoking a membership or a role would have no effect until
+        // every outstanding refresh token expired.
+        identity.RemoveClaims(TenantClaims.OrganizationId);
+        identity.RemoveClaims(TenantClaims.OrganizationSlug);
+        ApplyTenantContext(identity, context);
 
         identity.SetDestinations(GetDestinations);
 
@@ -109,6 +136,15 @@ public sealed class ConnectService(
 
         identity.SetClaim(Claims.Subject, await applicationManager.GetClientIdAsync(application, ct));
         identity.SetClaim(Claims.Name,    await applicationManager.GetDisplayNameAsync(application, ct));
+
+        // A machine client belongs to one company; its context comes from the subscription
+        // rather than from a membership, since there is no user.
+        var machineContext = await tenantContextResolver.ResolveForClientAsync(clientId, ct);
+        if (machineContext is not null)
+        {
+            identity.SetClaim(TenantClaims.OrganizationId, machineContext.TenantId.ToString())
+                    .SetClaim(TenantClaims.OrganizationSlug, machineContext.Slug);
+        }
 
         identity.SetScopes(requestedScopes);
         identity.SetResources(
@@ -143,13 +179,42 @@ public sealed class ConnectService(
     public Task SignOutAsync(CancellationToken ct = default) =>
         signInManager.SignOutAsync();
 
+    // ── Tenant context ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Stamps the company claims. A null context means none applies — a platform client, or a
+    /// machine identity — and the claims are simply absent rather than the request failing.
+    /// Whether absence is acceptable is the access policy's decision, not this method's.
+    /// </summary>
+    private static void ApplyTenantContext(ClaimsIdentity identity, TenantContext? context)
+    {
+        if (context is null) return;
+
+        identity.SetClaim(TenantClaims.OrganizationId, context.TenantId.ToString())
+                .SetClaim(TenantClaims.OrganizationSlug, context.Slug);
+
+        // Company roles go in the plural `roles` claim (RFC 9068), leaving the singular
+        // `role` claim carrying platform roles exactly as before.
+        identity.RemoveClaims(TenantClaims.Roles);
+        foreach (var role in context.Roles)
+            identity.AddClaim(new Claim(TenantClaims.Roles, role));
+    }
+
     // ── Destinations ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// An allowlist: a claim not named here is silently dropped from the issued token, with no
+    /// error anywhere. Any new claim must be added or it simply never arrives.
+    /// </summary>
     private static IEnumerable<string> GetDestinations(Claim claim) =>
         claim.Type switch
         {
             Claims.Name or Claims.Subject or Claims.Email or Claims.Role
                 => [Destinations.AccessToken, Destinations.IdentityToken],
+
+            TenantClaims.OrganizationId or TenantClaims.OrganizationSlug or TenantClaims.Roles
+                => [Destinations.AccessToken, Destinations.IdentityToken],
+
             _ => [Destinations.AccessToken]
         };
 }
