@@ -424,7 +424,25 @@ Three things had to be fixed before an external app could integrate at all:
 
 ## Before production
 
-- **Replace the ephemeral signing keys.** `AddEphemeralSigningKey()` / `AddEphemeralEncryptionKey()` generate a new key on every start, so every restart invalidates every token in every app and rotates the JWKS out from under your resource servers. Load real X.509 certificates from a secret store.
+- **Configure the token certificates.** Outside Development and Testing the server now
+  **refuses to start** without them, rather than falling back to ephemeral keys that
+  invalidate every token on each restart:
+
+  ```
+  OpenIddict:Certificates:Signing:Path         /run/secrets/signing.pfx
+  OpenIddict:Certificates:Signing:Password     <password>
+  OpenIddict:Certificates:Encryption:Path      /run/secrets/encryption.pfx
+  OpenIddict:Certificates:Encryption:Password  <password>
+  ```
+
+  `:Base64` is accepted instead of `:Path` for secret stores that only carry strings. Use
+  separate certificates for signing and encryption, and keep them across deployments —
+  replacing them has the same effect as an ephemeral key. Verified: the JWKS `kid` is
+  identical across a restart.
+- **Set `DataProtection:KeyPath`** to a persisted, writable directory. Without it the
+  data-protection keyring has nowhere to live, and in a container the default path may not even
+  be writable — the admin seeder fails at startup generating an email-confirmation token. It
+  also protects OpenIddict's tokens, so losing the directory signs everyone out.
 - **Rotate the seeded M2M secret** (`m2m-super-secret-change-in-production`) via
   `POST /api/admin/oidc-apps/{clientId}/rotate-secret`, or **Rotate secret** on the
   Admin → OIDC Apps page. The response carries the new value once and it is stored hashed

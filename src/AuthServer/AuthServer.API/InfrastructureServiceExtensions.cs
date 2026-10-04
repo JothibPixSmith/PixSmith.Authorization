@@ -150,20 +150,10 @@ public static class InfrastructureServiceExtensions
 					Scopes.Email, Scopes.Profile, Scopes.Roles,
 					Scopes.OpenId, Scopes.OfflineAccess, "api", "admin");
 
-				// Signing/encryption keys.
-				// In production, replace with X.509 certs loaded from secrets or Key Vault.
-				// Ephemeral keys are fine for single-instance containers; tokens are
-				// invalidated on restart. Dev certs persist via the data-protection store.
-				if (environment.IsDevelopment())
-				{
-					options.AddDevelopmentEncryptionCertificate()
-						   .AddDevelopmentSigningCertificate();
-				}
-				else
-				{
-					options.AddEphemeralEncryptionKey()
-						   .AddEphemeralSigningKey();
-				}
+				// Token signing and encryption keys. Required outside Development and
+				// Testing — see OpenIddictCertificates for why startup is refused rather
+				// than silently falling back to keys that rotate on every restart.
+				Security.OpenIddictCertificates.Configure(options, configuration, environment);
 
 				var aspNetCore = options.UseAspNetCore()
 					.EnableAuthorizationEndpointPassthrough()
