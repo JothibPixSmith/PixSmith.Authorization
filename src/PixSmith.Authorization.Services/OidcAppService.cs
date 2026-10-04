@@ -3,12 +3,14 @@ using OpenIddict.Abstractions;
 using System.Security.Cryptography;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Domain.Results;
+using PixSmith.Authorization.Repositories.Interfaces;
 using PixSmith.Authorization.Services.Interfaces;
 
 namespace PixSmith.Authorization.Services;
 
 public sealed class OidcAppService(
     IOpenIddictApplicationManager manager,
+    ITenantApplicationRepository subscriptions,
     IAuditService audit,
     ILogger<OidcAppService> logger) : IOidcAppService
 {
@@ -117,6 +119,20 @@ public sealed class OidcAppService(
         try
         {
             await manager.DeleteAsync(app, ct);
+
+            // Subscriptions reference the client by value rather than by foreign key, so
+            // deleting the client would otherwise leave rows behind — and a later client
+            // registered with the same id would silently inherit every one of them.
+            var orphaned = (await subscriptions.GetForClientAsync(clientId, ct)).ToList();
+            foreach (var subscription in orphaned)
+                await subscriptions.DeleteAsync(subscription.Id, ct);
+
+            if (orphaned.Count > 0)
+            {
+                await audit.RecordAsync("oidc-app.deleted",
+                    $"Client '{clientId}' deleted; removed {orphaned.Count} company subscription(s).", ct);
+            }
+
             return Result.Success();
         }
         catch (Exception ex)

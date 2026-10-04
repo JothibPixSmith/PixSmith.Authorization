@@ -19,14 +19,19 @@ namespace PixSmith.Authorization.UnitTests.Services;
 /// at all.
 /// </para>
 /// </summary>
-public sealed class OidcAppServiceSecretTests
+public sealed class OidcAppServiceSecretTests : IDisposable
 {
     private readonly Mock<IOpenIddictApplicationManager> _manager = new();
     private readonly Mock<IAuditService> _audit = new();
     private readonly object _app = new();
 
-    private OidcAppService Build() =>
-        new(_manager.Object, _audit.Object, NullLogger<OidcAppService>.Instance);
+    private readonly SqliteTestDb _db = new();
+
+    private OidcAppService Build() => new(
+        _manager.Object,
+        new PixSmith.Authorization.Repositories.TenantApplicationRepository(_db.Context),
+        _audit.Object,
+        NullLogger<OidcAppService>.Instance);
 
     private void SeedApplication(string clientId, string clientType, string? storedSecret)
     {
@@ -246,4 +251,6 @@ public sealed class OidcAppServiceSecretTests
         Assert.True(result.IsSuccess);
         Assert.Equal(43, result.Value!.ClientSecret.Length);
     }
+
+    public void Dispose() => _db.Dispose();
 }
