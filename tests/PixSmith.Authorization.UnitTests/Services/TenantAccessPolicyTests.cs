@@ -267,7 +267,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
         // Administering the auth server is not a tenant-scoped activity. Without this,
         // platform-only staff could not reach the admin UI at all.
         var decision = await Build("blazor-client")
-            .EvaluateForUserAsync(Guid.NewGuid(), "blazor-client", null);
+            .EvaluateForUserAsync(Guid.NewGuid(), "blazor-client", null, ["Admin"]);
 
         Assert.True(decision.IsAllowed);
         Assert.Null(decision.Context);
@@ -281,7 +281,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
         await SeedMembershipAsync(tenant.Id, userId, "OrgAdmin");
 
         var decision = await Build("blazor-client")
-            .EvaluateForUserAsync(userId, "blazor-client", null);
+            .EvaluateForUserAsync(userId, "blazor-client", null, ["Admin"]);
 
         Assert.True(decision.IsAllowed);
         Assert.Equal(["OrgAdmin"], decision.Context!.Roles);
@@ -296,7 +296,7 @@ public sealed class TenantAccessPolicyTests : IDisposable
 
         var policy = Build("blazor-client");
 
-        Assert.True((await policy.EvaluateForUserAsync(userId, "blazor-client", null)).IsAllowed);
+        Assert.True((await policy.EvaluateForUserAsync(userId, "blazor-client", null, ["Admin"])).IsAllowed);
         Assert.False((await policy.EvaluateForUserAsync(userId, "invoicing", null)).IsAllowed);
     }
 
@@ -305,15 +305,26 @@ public sealed class TenantAccessPolicyTests : IDisposable
     {
         var policy = Build("blazor-client");
 
-        Assert.True((await policy.EvaluateForUserAsync(Guid.NewGuid(), "BLAZOR-CLIENT", null)).IsAllowed);
+        Assert.True((await policy.EvaluateForUserAsync(Guid.NewGuid(), "BLAZOR-CLIENT", null, ["Admin"])).IsAllowed);
         // A prefix must not inherit the exemption — "blazor-client-evil" is a different client.
-        Assert.False((await policy.EvaluateForUserAsync(Guid.NewGuid(), "blazor-client-evil", null)).IsAllowed);
+        Assert.False((await policy.EvaluateForUserAsync(Guid.NewGuid(), "blazor-client-evil", null, ["Admin"])).IsAllowed);
+    }
+
+    [Fact]
+    public async Task A_platform_client_still_requires_the_platform_role()
+    {
+        // The exemption waives tenancy, not authorization. Without this a customer could
+        // authenticate to the vendor's own admin console.
+        var decision = await Build("blazor-client")
+            .EvaluateForUserAsync(Guid.NewGuid(), "blazor-client", null, ["User"]);
+
+        Assert.False(decision.IsAllowed);
     }
 
     [Fact]
     public async Task With_no_platform_clients_configured_nothing_is_exempt()
     {
-        Assert.False((await Build().EvaluateForUserAsync(Guid.NewGuid(), "blazor-client", null)).IsAllowed);
+        Assert.False((await Build().EvaluateForUserAsync(Guid.NewGuid(), "blazor-client", null, ["Admin"])).IsAllowed);
     }
 
     public void Dispose() => _db.Dispose();

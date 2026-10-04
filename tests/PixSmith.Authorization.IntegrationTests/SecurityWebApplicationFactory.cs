@@ -102,7 +102,7 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
 
     // ── Seeding, done through the real services rather than raw SQL ───────────
 
-    public async Task<Guid> CreateUserAsync(string userName)
+    public async Task<Guid> CreateUserAsync(string userName, string? platformRole = null)
     {
         using var scope = Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser<Guid>>>();
@@ -118,6 +118,9 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
         var result = await users.CreateAsync(user, UserPassword);
         if (!result.Succeeded)
             throw new InvalidOperationException(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+        if (platformRole is not null)
+            await users.AddToRoleAsync(user, platformRole);
 
         return user.Id;
     }

@@ -163,10 +163,27 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
     // ── The platform exemption ────────────────────────────────────────────────
 
     [Fact]
+    public async Task A_customer_user_cannot_authenticate_to_the_platform_client()
+    {
+        // Found by exercising a real customer tenancy: the exemption previously waived
+        // tenancy without demanding platform authority, so any customer could obtain a
+        // token for the vendor's admin console.
+        var tenantId = await _factory.CreateTenantAsync("Riverside Studios");
+        var userId = await _factory.CreateUserAsync("amy");
+        await _factory.AddMemberAsync(tenantId, userId, ["Member", "OrgAdmin"]);
+
+        var (status, body) = await TokenAsync("blazor-client", "amy");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("access_denied", body.GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task A_platform_client_is_reachable_without_a_membership()
     {
-        // Otherwise platform-only staff could not reach the admin UI at all.
-        await _factory.CreateUserAsync("grace");
+        // Otherwise platform-only staff could not reach the admin UI at all. The exemption
+        // waives tenancy, so she still needs the platform role.
+        await _factory.CreateUserAsync("grace", platformRole: "Admin");
 
         var (status, body) = await TokenAsync("blazor-client", "grace");
 

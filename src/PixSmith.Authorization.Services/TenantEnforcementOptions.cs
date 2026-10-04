@@ -28,6 +28,15 @@ public sealed class TenantEnforcementOptions
     /// </summary>
     public List<string> PlatformClients { get; set; } = [];
 
+    /// <summary>
+    /// Platform role a user must hold to obtain a token for a platform client. These clients
+    /// are exempt from <i>tenancy</i>, not from authorization — without this requirement any
+    /// authenticated user, including a customer, could sign in to the vendor's admin console.
+    /// They would see nothing, since the admin API needs the role and scope anyway, but being
+    /// able to authenticate to it at all is wrong.
+    /// </summary>
+    public string PlatformClientRole { get; set; } = "Admin";
+
     public bool IsPlatformClient(string? clientId) =>
         !string.IsNullOrWhiteSpace(clientId)
         && PlatformClients.Any(c => string.Equals(c, clientId, StringComparison.OrdinalIgnoreCase));

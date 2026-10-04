@@ -14,15 +14,33 @@ public sealed class TenantAccessPolicy(
     ILogger<TenantAccessPolicy> logger) : ITenantAccessPolicy
 {
     public async Task<TenantAccessDecision> EvaluateForUserAsync(
-        Guid userId, string? clientId, string? organization, CancellationToken ct = default)
+        Guid userId, string? clientId, string? organization,
+        IReadOnlyCollection<string>? platformRoles = null, CancellationToken ct = default)
     {
+        var settings = options.Value;
         var context = await resolver.ResolveForUserAsync(userId, clientId, organization, ct);
 
-        // Platform clients administer the auth server itself and are not tenant-scoped. A
-        // company context is still attached when one happens to resolve, so an administrator
-        // who is also a member gets the same claims as anywhere else.
-        if (options.Value.IsPlatformClient(clientId))
+        // Platform clients administer the auth server itself and are not tenant-scoped. They
+        // are exempt from tenancy, not from authorization: platform authority is required in
+        // its place, or any customer could authenticate to the vendor's admin console.
+        if (settings.IsPlatformClient(clientId))
+        {
+            var holdsPlatformRole = platformRoles?.Any(r =>
+                string.Equals(r, settings.PlatformClientRole, StringComparison.OrdinalIgnoreCase)) == true;
+
+            if (!holdsPlatformRole)
+            {
+                logger.LogInformation(
+                    "Access denied: user {UserId} lacks the '{Role}' platform role required by "
+                    + "platform client '{ClientId}'.", userId, settings.PlatformClientRole, clientId);
+
+                return TenantAccessDecision.Deny("You do not have access to this application.");
+            }
+
+            // A company context is still attached when one resolves, so an administrator who
+            // is also a member gets the same claims as anywhere else.
             return TenantAccessDecision.Allow(context);
+        }
 
         if (context is null)
             return TenantAccessDecision.Deny(await ExplainUnresolvedAsync(userId, organization, ct));

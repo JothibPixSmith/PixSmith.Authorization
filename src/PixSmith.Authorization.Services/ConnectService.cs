@@ -53,9 +53,13 @@ public sealed class ConnectService(
     {
         var id = await userManager.GetUserIdAsync(user);
 
-        return Guid.TryParse(id, out var userId)
-            ? await tenantAccessPolicy.EvaluateForUserAsync(userId, clientId, organization, ct)
-            : TenantAccessDecision.Deny("The signed-in account could not be identified.");
+        if (!Guid.TryParse(id, out var userId))
+            return TenantAccessDecision.Deny("The signed-in account could not be identified.");
+
+        var platformRoles = (await userManager.GetRolesAsync(user)).ToList();
+
+        return await tenantAccessPolicy.EvaluateForUserAsync(
+            userId, clientId, organization, platformRoles, ct);
     }
 
     // ── Identity building ─────────────────────────────────────────────────────

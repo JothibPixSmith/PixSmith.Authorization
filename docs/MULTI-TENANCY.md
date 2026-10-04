@@ -169,6 +169,13 @@ With it, revocation takes effect at the next refresh.
 than a company's data — the admin UI above all. They skip the membership and subscription
 checks, though a company context is still attached when one resolves.
 
+They are **not** exempt from authorization: the caller must hold the platform role named by
+`TenantEnforcement:PlatformClientRole` (default `Admin`). Found by exercising a real customer
+tenancy — without that requirement the exemption waived tenancy for *everyone*, so a customer
+could obtain a token for the vendor's own admin console. They could do nothing with it, since
+the admin API demands the role and the `admin` scope, but being able to authenticate to it at
+all was wrong.
+
 The exemption exists because "administer the authorization server" is not a tenant-scoped
 activity. Without it, platform staff would need a membership of some company merely to reach
 the admin UI — which would make membership mean two different things and hand every

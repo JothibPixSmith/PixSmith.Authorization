@@ -23,6 +23,11 @@ public sealed record TenantAccessDecision(bool IsAllowed, string? Error, TenantC
 /// </summary>
 public interface ITenantAccessPolicy
 {
+    /// <param name="platformRoles">
+    /// The user's platform Identity roles. Needed because a platform client waives the
+    /// tenancy checks and must therefore demand platform authority in their place.
+    /// </param>
     Task<TenantAccessDecision> EvaluateForUserAsync(
-        Guid userId, string? clientId, string? organization, CancellationToken ct = default);
+        Guid userId, string? clientId, string? organization,
+        IReadOnlyCollection<string>? platformRoles = null, CancellationToken ct = default);
 }
