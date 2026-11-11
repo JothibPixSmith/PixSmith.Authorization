@@ -71,7 +71,7 @@ fi
 
 step "PostgreSQL: $PG_CONTAINER"
 
-pg_state="$(docker inspect -f '{{.State.Status}}' "$PG_CONTAINER" 2>/dev/null || echo "missing")"
+pg_state="$(docker inspect -f '{{.State.Status}}' "$PG_CONTAINER" 2>/dev/null)" || pg_state=missing
 
 case "$pg_state" in
     running)

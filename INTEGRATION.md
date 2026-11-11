@@ -439,6 +439,18 @@ Three things had to be fixed before an external app could integrate at all:
   separate certificates for signing and encryption, and keep them across deployments —
   replacing them has the same effect as an ephemeral key. Verified: the JWKS `kid` is
   identical across a restart.
+- **Name the reverse proxy.** `X-Forwarded-Proto` decides whether a request counts as HTTPS,
+  so it is honoured only from configured proxies; outside Development and Testing the server
+  **refuses to start** without one:
+
+  ```
+  ForwardedHeaders:KnownNetworks:0   172.18.0.0/16    the proxy's network (or KnownProxies:0 <ip>)
+  ForwardedHeaders:Disabled          true             only if TLS terminates at this server
+  ```
+
+  Trusting every sender would let a client reach the container directly over plain HTTP,
+  add `X-Forwarded-Proto: https`, and pass the HTTPS requirement. In Compose this is
+  `TRUSTED_PROXY_NETWORK` in `.env`.
 - **Set `DataProtection:KeyPath`** to a persisted, writable directory. Without it the
   data-protection keyring has nowhere to live, and in a container the default path may not even
   be writable — the admin seeder fails at startup generating an email-confirmation token. It

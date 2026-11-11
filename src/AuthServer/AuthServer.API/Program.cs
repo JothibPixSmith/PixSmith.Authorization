@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using PixSmith.Authorization.API;
+using PixSmith.Authorization.API.Security;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using Serilog;
@@ -63,10 +64,24 @@ if (app.Environment.IsDevelopment())
 	app.UseSwaggerUI();
 }
 
+// First, so every later decision (HSTS, OpenIddict's HTTPS requirement, request logging)
+// sees the original scheme and client IP — from trusted proxies only.
 app.UseForwardedHeaders();
 
+app.UseSecurityHeaders();
+
 if (app.Environment.IsDevelopment())
+{
+	// Local `dotnet run` listens on both https://localhost:7100 and http://localhost:7101;
+	// this sends the http one to https. Production has no plain-HTTP listener to redirect:
+	// the reverse proxy owns that, and OpenIddict rejects any non-HTTPS protocol request.
 	app.UseHttpsRedirection();
+}
+else
+{
+	// Only emitted on HTTPS responses, so it relies on the forwarded scheme above.
+	app.UseHsts();
+}
 
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();

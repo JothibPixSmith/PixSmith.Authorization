@@ -242,6 +242,7 @@ Dependencies always point inward. The Domain has no external package references.
 - [ ] Mount a persistent volume for `/app/data` (database + data-protection keys)
 - [ ] Set `RequireConfirmedEmail = true` and implement `IEmailService`
 - [ ] Configure a reverse proxy (nginx, Traefik) and set `OpenIddict__BlazorClient__BaseUri` to the public URL
+- [ ] Name that proxy as trusted (`ForwardedHeaders__KnownNetworks__0` / `TRUSTED_PROXY_NETWORK`) — the server refuses to start without it
 - [ ] Review Identity password and lockout policy in `appsettings.json`
 
 ---

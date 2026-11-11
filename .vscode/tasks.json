@@ -36,6 +36,22 @@
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
+      // Production-shaped stack: Release runtime image as Staging behind a TLS proxy at
+      // https://localhost:8443. No debugger — that is the point. See staging/README.md.
+      "label": "staging: start stack",
+      "type": "shell",
+      "command": "${workspaceFolder}/staging/start.sh",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "staging: stop stack",
+      "type": "shell",
+      "command": "${workspaceFolder}/staging/stop.sh",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
       "label": "build: solution",
       "command": "dotnet",
       "type": "process",

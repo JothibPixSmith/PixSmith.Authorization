@@ -39,7 +39,7 @@
          versions; these flow on to every project referencing Infrastructure. Drop once the
          parent packages pull patched versions themselves. -->
     <PackageReference Include="System.Security.Cryptography.Xml" Version="10.*" />
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 
 </Project>

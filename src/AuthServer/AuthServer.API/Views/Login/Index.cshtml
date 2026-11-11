@@ -21,8 +21,12 @@
         }
     </div>
 
-    <div asp-validation-summary="All"
-         class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 empty:hidden"></div>
+    @* The tag helper always emits a placeholder <ul>, so the box is never :empty — render it only when there are errors. *@
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div asp-validation-summary="All"
+             class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700"></div>
+    }
 
     <form method="post" class="space-y-4">
         <input type="hidden" asp-for="ReturnUrl" />

@@ -1,7 +1,6 @@
 ﻿using PixSmith.Authorization.Infrastructure.OpenIddict;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
@@ -34,16 +33,11 @@ public static class InfrastructureServiceExtensions
 		}
 
 		// ─── Forwarded Headers ─────────────────────────────────────────────
-		// Required when running behind a reverse proxy (nginx, Traefik, etc.)
-		// in a container so that the app sees the original scheme and host.
+		// Required behind a reverse proxy (nginx, Traefik, etc.) so the app sees the
+		// original scheme. Honoured only from configured proxies, and the server refuses
+		// to start in production without them; see ForwardedHeadersSetup for why.
 
-		services.Configure<ForwardedHeadersOptions>(options =>
-		{
-			options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-			// Trust all proxies within a Docker network; restrict to known IPs in production.
-			options.KnownIPNetworks.Clear();
-			options.KnownProxies.Clear();
-		});
+		Security.ForwardedHeadersSetup.Configure(services, configuration, environment);
 
 		// ─── EF Core ───────────────────────────────────────────────────────
 
@@ -138,6 +132,15 @@ public static class InfrastructureServiceExtensions
 					   .AllowPasswordFlow()
 					   .AllowRefreshTokenFlow()
 					   .RequireProofKeyForCodeExchange();
+
+				// S256 only. AllowAuthorizationCodeFlow() also enables "plain", where the
+				// challenge *is* the verifier, so anyone who sees the authorization request
+				// (logs, browser history, a proxy) can redeem the code: PKCE in name only.
+				// Removing it makes OpenIddict reject plain, or a challenge with no method
+				// (which defaults to plain), and drops it from discovery's
+				// code_challenge_methods_supported. ASVS 5.0 10.4.6; RFC 9700 §2.1.1.
+				options.Configure(server =>
+					server.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain));
 
 				// Issue access tokens as plain signed JWTs rather than encrypted JWEs.
 				// Required for external resource servers: they validate tokens against

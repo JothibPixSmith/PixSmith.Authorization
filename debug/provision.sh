@@ -21,14 +21,16 @@ REPO_ROOT="$PWD"
 
 [ -f .env ] && { set -a; . ./.env; set +a; }
 
-BASE="${AUTH_BASE_URI:-http://localhost:8080}"
-KEY_DIR="$REPO_ROOT/debug/keys"
+# PROVISION_* overrides win over .env, which describes the debug stack; staging/provision.sh
+# uses them to aim this script at the staging stack instead.
+BASE="${PROVISION_BASE_URI:-${AUTH_BASE_URI:-http://localhost:8080}}"
+KEY_DIR="${PROVISION_KEY_DIR:-$REPO_ROOT/debug/keys}"
 # Threshold is 2; dev-carol is the spare. Override to exercise quorum behaviour, e.g.
 #   PROVISION_SIGNERS="dev-alice" ./debug/provision.sh create '{"name":"X"}'   -> refused
 IFS=' ' read -r -a SIGNERS <<< "${PROVISION_SIGNERS:-dev-alice dev-bob}"
 
-ADMIN_EMAIL="${ADMIN_SEED_EMAIL:-admin@pixsmith.local}"
-ADMIN_PASSWORD="${ADMIN_SEED_PASSWORD:-Admin1234!}"
+ADMIN_EMAIL="${PROVISION_ADMIN_EMAIL:-${ADMIN_SEED_EMAIL:-admin@pixsmith.local}}"
+ADMIN_PASSWORD="${PROVISION_ADMIN_PASSWORD:-${ADMIN_SEED_PASSWORD:-Admin1234!}}"
 
 die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 

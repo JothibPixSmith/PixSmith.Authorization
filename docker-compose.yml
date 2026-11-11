@@ -38,6 +38,11 @@ services:
       # Override the M2M secret. Use Docker secrets or an env file in production.
       - OpenIddict__M2MClient__ClientSecret=${M2M_CLIENT_SECRET:?set M2M_CLIENT_SECRET in .env}
 
+      # The reverse proxy that terminates TLS. Forwarded headers (X-Forwarded-Proto/-For)
+      # are believed only from here, and outside Development the server refuses to start
+      # without it. See src/AuthServer/AuthServer.API/Security/ForwardedHeadersSetup.cs.
+      - ForwardedHeaders__KnownNetworks__0=${TRUSTED_PROXY_NETWORK:-}
+
       - Database__Provider=Postgres
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-pixsmith_auth};Username=${APP_DB_USER:-pixsmith_app};Password=${APP_DB_PASSWORD}
 

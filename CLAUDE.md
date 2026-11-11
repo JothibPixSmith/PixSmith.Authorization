@@ -20,6 +20,10 @@ dotnet test tests/PixSmith.Authorization.IntegrationTests
 
 # Debug against Postgres in containers (VS Code: F5 -> "Attach to Auth Server (container)")
 ./debug/start.sh
+
+# Production-shaped staging stack: Release image, Staging environment, TLS proxy at
+# https://localhost:8443. No debugger. See staging/README.md.
+./staging/start.sh
 ```
 
 No lint tooling is configured beyond `<Nullable>enable</Nullable>` and `<ImplicitUsings>enable</ImplicitUsings>` in all projects.
