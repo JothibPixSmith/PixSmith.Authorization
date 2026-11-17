@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
 
 namespace PixSmith.Authorization.Infrastructure.OpenIddict;
@@ -75,6 +76,9 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 			}
 		};
 
+		// The PKCE requirement above is what enforces PKCE for this client: there is no
+		// server-wide switch any more (see PkcePolicy). Every seeded authorization-code
+		// client must carry it.
 		var blazorClient = await manager.FindByClientIdAsync(blazorClientId, cancellationToken);
 		if (blazorClient is null)
 			await manager.CreateAsync(blazorDescriptor, cancellationToken);
@@ -104,6 +108,22 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 				}
 			}, cancellationToken);
 		}
+
+		// ─── PKCE backfill ─────────────────────────────────────────────────
+		// Puts the PKCE requirement on every existing authorization-code client that lacks
+		// it: clients created before PKCE was required per client, or a conformance-test
+		// client whose exemption is no longer allowed. Runs before the server starts
+		// listening, so no request is ever served without it.
+
+		var exemptionsAllowed = PkcePolicy.ExemptionsAllowed(configuration);
+		var enforced = await PkcePolicy.EnforceAsync(manager, exemptionsAllowed, cancellationToken);
+
+		var logger = scope.ServiceProvider.GetService<ILogger<OpenIddictSeeder>>();
+		if (enforced.Count > 0)
+			logger?.LogWarning("PKCE requirement added to {Count} client(s): {Clients}", enforced.Count, enforced);
+		if (exemptionsAllowed)
+			logger?.LogWarning("{Setting} is on: clients flagged PKCE-exempt may use the code grant without PKCE.",
+				PkcePolicy.AllowExemptClientsKey);
 	}
 
 	public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

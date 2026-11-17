@@ -25,6 +25,9 @@ public static class InfrastructureServiceExtensions
 		// In containers, mount this path as a volume. In dev, the default in-memory
 		// store is used unless DataProtection:KeyPath is set.
 
+		// Refuses to start in Production with PKCE exemptions switched on.
+		PixSmith.Authorization.Infrastructure.OpenIddict.PkcePolicy.ValidateConfiguration(configuration, environment);
+
 		var keyPath = configuration["DataProtection:KeyPath"];
 		if (!string.IsNullOrEmpty(keyPath))
 		{
@@ -126,12 +129,17 @@ public static class InfrastructureServiceExtensions
 					   .SetRevocationEndpointUris("/connect/revoke")
 					   .SetJsonWebKeySetEndpointUris("/.well-known/jwks");
 
-				// Supported flows
+				// Supported flows.
+				//
+				// PKCE is required per client rather than server-wide: every authorization-code
+				// client carries the requirement (OidcAppService on create/update, and
+				// PkcePolicy.EnforceAsync in the seeder backfills it at startup, before the server
+				// accepts requests). That is what lets a single, gated conformance-test client be
+				// exempt. See PkcePolicy.
 				options.AllowAuthorizationCodeFlow()
 					   .AllowClientCredentialsFlow()
 					   .AllowPasswordFlow()
-					   .AllowRefreshTokenFlow()
-					   .RequireProofKeyForCodeExchange();
+					   .AllowRefreshTokenFlow();
 
 				// S256 only. AllowAuthorizationCodeFlow() also enables "plain", where the
 				// challenge *is* the verifier, so anyone who sees the authorization request

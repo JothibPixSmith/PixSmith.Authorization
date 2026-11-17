@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
+using PixSmith.Authorization.Infrastructure.OpenIddict;
 using System.Security.Cryptography;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Domain.Results;
@@ -12,6 +14,7 @@ public sealed class OidcAppService(
     IOpenIddictApplicationManager manager,
     ITenantApplicationRepository subscriptions,
     IAuditService audit,
+    IConfiguration configuration,
     ILogger<OidcAppService> logger) : IOidcAppService
 {
     public async Task<Result<IReadOnlyList<OidcAppDto>>> GetAllAsync(CancellationToken ct = default)
@@ -43,9 +46,13 @@ public sealed class OidcAppService(
             if (await manager.FindByClientIdAsync(request.ClientId, ct) is not null)
                 return Result<OidcAppDto>.Failure($"An application with client ID '{request.ClientId}' already exists.");
 
+            var exemption = CheckPkceExemption(request.PkceExempt, request.ClientType, request.GrantTypes);
+            if (!exemption.IsSuccess) return Result<OidcAppDto>.Failure(exemption.Error!);
+
             var descriptor = BuildDescriptor(
                 request.ClientId, request.ClientSecret, request.DisplayName, request.ClientType,
-                request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes);
+                request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes,
+                request.PkceExempt);
 
             if (!string.IsNullOrWhiteSpace(request.JsonWebKeySet))
             {
@@ -54,6 +61,7 @@ public sealed class OidcAppService(
             }
 
             var app = await manager.CreateAsync(descriptor, ct);
+            if (request.PkceExempt) await RecordExemptionAsync(request.ClientId, ct);
             return Result<OidcAppDto>.Success(await ToDtoAsync(app, ct));
         }
         catch (Exception ex)
@@ -86,9 +94,15 @@ public sealed class OidcAppService(
             await manager.PopulateAsync(current, app, ct);
             var preservedSecret = current.ClientSecret;
 
+            // Not "keep what is there": an update that omits the flag puts PKCE back. Losing an
+            // exemption by accident is safe; keeping one by accident is not.
+            var exemption = CheckPkceExemption(request.PkceExempt, existing, request.GrantTypes);
+            if (!exemption.IsSuccess) return Result.Failure(exemption.Error!);
+
             var descriptor = BuildDescriptor(
                 clientId, preservedSecret, request.DisplayName, existing,
-                request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes);
+                request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes,
+                request.PkceExempt);
 
             // Public keys, unlike the secret, really can be read back — so "omitted means keep
             // what is registered" is honestly implementable here rather than a polite fiction.
@@ -103,12 +117,47 @@ public sealed class OidcAppService(
             }
 
             await manager.UpdateAsync(app, descriptor, ct);
+            if (request.PkceExempt && !PkcePolicy.IsFlaggedExempt(current.Settings))
+                await RecordExemptionAsync(clientId, ct);
             return Result.Success();
         }
         catch (Exception ex)
         {
             return Result.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// A PKCE exemption is refused unless the server allows them, and only ever granted to a
+    /// confidential authorization-code client: a public client has nothing else protecting
+    /// its codes, and an exemption on a client without the code grant would mean nothing.
+    /// </summary>
+    private Result CheckPkceExemption(bool requested, string clientType, List<string> grantTypes)
+    {
+        if (!requested) return Result.Success();
+
+        if (!PkcePolicy.ExemptionsAllowed(configuration))
+        {
+            return Result.Failure(
+                $"PKCE exemptions are disabled on this server ({PkcePolicy.AllowExemptClientsKey} is not true). " +
+                "They exist only for conformance-test runs against non-production servers.");
+        }
+
+        if (!string.Equals(clientType, OpenIddictConstants.ClientTypes.Confidential, StringComparison.OrdinalIgnoreCase))
+            return Result.Failure("Only a confidential client can be exempted from PKCE.");
+
+        if (!grantTypes.Contains("authorization_code"))
+            return Result.Failure("A PKCE exemption only applies to a client using the authorization_code grant.");
+
+        return Result.Success();
+    }
+
+    private async Task RecordExemptionAsync(string clientId, CancellationToken ct)
+    {
+        logger.LogWarning(
+            "OIDC application {ClientId} is exempt from PKCE. Delete it after the test run.", clientId);
+        await audit.RecordAsync("oidc-app.pkce.exempted",
+            $"Client '{clientId}' may use the authorization code grant without PKCE.", ct);
     }
 
     public async Task<Result> DeleteAsync(string clientId, CancellationToken ct = default)
@@ -222,7 +271,9 @@ public sealed class OidcAppService(
             .ToList() ?? [];
 
         return new OidcAppDto(clientId, displayName, clientType, redirectUris, postLogoutUris,
-            permissions, requirements, signingKeys);
+            permissions, requirements, signingKeys,
+            PkceExempt: PkcePolicy.UsesAuthorizationCode(permissions)
+                && !requirements.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange));
     }
 
     /// <summary>
@@ -251,7 +302,7 @@ public sealed class OidcAppService(
     private static OpenIddictApplicationDescriptor BuildDescriptor(
         string clientId, string? clientSecret, string? displayName, string clientType,
         List<string> redirectUris, List<string> postLogoutUris,
-        List<string> scopes, List<string> grantTypes)
+        List<string> scopes, List<string> grantTypes, bool pkceExempt)
     {
         var descriptor = new OpenIddictApplicationDescriptor
         {
@@ -293,8 +344,16 @@ public sealed class OidcAppService(
         foreach (var uri in postLogoutUris)
             descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
 
-        if (clientType == OpenIddictConstants.ClientTypes.Public && grantTypes.Contains("authorization_code"))
-            descriptor.Requirements.Add(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange);
+        // Every authorization-code client, public or confidential (ASVS 5.0 10.4.6). Enforced
+        // per client since the server-wide switch was removed; see PkcePolicy. The exemption
+        // has already been validated by CheckPkceExemption.
+        if (grantTypes.Contains("authorization_code"))
+        {
+            if (pkceExempt)
+                descriptor.Settings[PkcePolicy.ExemptSetting] = "true";
+            else
+                descriptor.Requirements.Add(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange);
+        }
 
         return descriptor;
     }

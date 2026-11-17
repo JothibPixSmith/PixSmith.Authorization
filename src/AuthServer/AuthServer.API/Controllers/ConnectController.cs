@@ -151,7 +151,9 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 	// ─── UserInfo Endpoint ────────────────────────────────────────────────────
 
 	[Authorize(AuthenticationSchemes = OpenIddictServerAspNetCoreDefaults.AuthenticationScheme)]
+	// OIDC Core §5.3.1: the UserInfo endpoint must accept both GET and POST.
 	[HttpGet("~/connect/userinfo")]
+	[HttpPost("~/connect/userinfo")]
 	public async Task<IActionResult> UserInfo()
 	{
 		var subject = User.GetClaim(Claims.Subject);

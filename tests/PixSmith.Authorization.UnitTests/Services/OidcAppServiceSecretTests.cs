@@ -31,6 +31,7 @@ public sealed class OidcAppServiceSecretTests : IDisposable
         _manager.Object,
         new PixSmith.Authorization.Repositories.TenantApplicationRepository(_db.Context),
         _audit.Object,
+        new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
         NullLogger<OidcAppService>.Instance);
 
     private void SeedApplication(string clientId, string clientType, string? storedSecret)

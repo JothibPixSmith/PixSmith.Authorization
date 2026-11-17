@@ -56,6 +56,17 @@ ADMIN_EMAIL=admin@pixsmith.local
 SECRETS="$REPO_ROOT/staging/secrets"
 READY_TIMEOUT="${READY_TIMEOUT:-120}"
 
+# Off unless asked for. When on, a client flagged PKCE-exempt may use the authorization
+# code grant without PKCE, for conformance-suite plans that send no code_challenge:
+#   STAGING_ALLOW_PKCE_EXEMPT=true ./staging/start.sh
+#   (PixSmith.PenTesting) ./tools/staging/seed-fixtures.py oidf-client create
+#   ... run the suite ...
+#   (PixSmith.PenTesting) ./tools/staging/seed-fixtures.py oidf-client delete
+#   ./staging/start.sh                               restart with it off again
+# Restarting without it puts PKCE back on any flagged client that is left.
+ALLOW_PKCE_EXEMPT="${STAGING_ALLOW_PKCE_EXEMPT:-false}"
+case "$ALLOW_PKCE_EXEMPT" in true|false) ;; *) die "STAGING_ALLOW_PKCE_EXEMPT must be true or false." ;; esac
+
 step() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -228,6 +239,7 @@ docker run -d --name "$SERVER_CONTAINER" \
     -e OpenIddict__Certificates__Encryption__Path=/run/secrets/encryption.pfx \
     -e OpenIddict__Certificates__Encryption__Password="$CERT_PASSWORD" \
     -e ForwardedHeaders__KnownProxies__0="$PROXY_IP" \
+    -e Security__AllowPkceExemptClients="$ALLOW_PKCE_EXEMPT" \
     -e AdminSeed__Email="$ADMIN_EMAIL" \
     -e AdminSeed__Username=admin \
     -e AdminSeed__Password="$ADMIN_PASSWORD" \
@@ -316,3 +328,8 @@ printf '  admin         %s / password in staging/secrets/admin-password\n' "$ADM
 printf '  direct (bypass, should refuse)  http://localhost:%s\n' "$DIRECT_PORT"
 printf '  logs          docker logs -f %s\n' "$SERVER_CONTAINER"
 printf '  tear down     ./staging/stop.sh   (--purge to delete data and secrets)\n\n'
+if [ "$ALLOW_PKCE_EXEMPT" = true ]; then
+    warn "PKCE exemptions are ON. Delete the test client when done (PixSmith.PenTesting: ./tools/staging/seed-fixtures.py oidf-client delete)"
+    warn "and restart without STAGING_ALLOW_PKCE_EXEMPT."
+    printf '\n'
+fi

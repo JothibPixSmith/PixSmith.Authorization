@@ -144,7 +144,12 @@ public sealed record OidcAppDto(
     IReadOnlyList<string> PostLogoutRedirectUris,
     IReadOnlyList<string> Permissions,
     IReadOnlyList<string> Requirements,
-    IReadOnlyList<OidcAppSigningKeyDto> SigningKeys);
+    IReadOnlyList<OidcAppSigningKeyDto> SigningKeys,
+    /// <summary>
+    /// True when the client may use the authorization code grant without PKCE. Only ever true
+    /// for a conformance-test client on a server that allows it; see PkcePolicy.
+    /// </summary>
+    bool PkceExempt = false);
 
 /// <summary>
 /// A public signing key registered for client assertions. Only the identifying metadata is
@@ -167,7 +172,13 @@ public sealed record CreateOidcAppRequest(
     /// A confidential client needs either this or a ClientSecret; supplying this instead is
     /// what removes the shared secret from config files and deployment pipelines entirely.
     /// </summary>
-    string? JsonWebKeySet = null);
+    string? JsonWebKeySet = null,
+    /// <summary>
+    /// Lets this client use the authorization code grant without PKCE. Refused unless
+    /// Security:AllowPkceExemptClients is true (never in Production), and only for a
+    /// confidential authorization-code client. For conformance-test runs; delete it afterwards.
+    /// </summary>
+    bool PkceExempt = false);
 
 public sealed record UpdateOidcAppRequest(
     string? DisplayName,
@@ -180,7 +191,12 @@ public sealed record UpdateOidcAppRequest(
     /// wholesale. Unlike the client secret this really can be read back, so "keep what is
     /// there" is honestly implementable here.
     /// </summary>
-    string? JsonWebKeySet = null);
+    string? JsonWebKeySet = null,
+    /// <summary>
+    /// Same rules as on create. Omitting it clears an existing exemption: an edit should never
+    /// keep a client free of PKCE by accident.
+    /// </summary>
+    bool PkceExempt = false);
 
 // ─── Admin Dashboard ───────────────────────────────────────────────────────
 

@@ -42,10 +42,16 @@ once.
 - **Browser:** the TLS certificate is self-signed, so expect one warning.
 - **curl:** pass `--cacert staging/secrets/tls.crt`.
 - **Admin account:** `admin@pixsmith.local`, with the password in `staging/secrets/admin-password`.
-- **Pen tests:** target `https://localhost:8443/`. Run `./staging/seed-pentest.py` to create a
-  test company, two confidential clients (`pentest-web`, `pentest-m2m`) and two users
-  (`pentest-alice` as OrgAdmin, `pentest-bob` as Member). Credentials are written to
-  `staging/secrets/pentest.env`. The script is safe to re-run, so after `--purge` just run it again.
+- **Pen tests:** target `https://localhost:8443/`. The test fixtures (a test company, the
+  `pentest-*` clients and users, and the temporary `oidf-conformance` client) live in the
+  pen-testing repository: `PixSmith.PenTesting/tools/staging/seed-fixtures.py`, which writes
+  its credentials there too. It expects this repo next to it, or at `PIXSMITH_AUTH_REPO`.
+- **OIDF conformance suite:** its OIDC certification plans send no `code_challenge`. Every
+  other client requires PKCE, so the suite runs against a temporary exempt client, which
+  this server only allows when started with `STAGING_ALLOW_PKCE_EXEMPT=true ./staging/start.sh`.
+  Create and delete that client with the fixtures script's `oidf-client create|delete`, then
+  restart without the variable. The exempt client may leave PKCE out, but `plain` is still
+  refused. If you forget the delete, restarting without the variable puts PKCE back on it anyway.
 - **`http://localhost:8090`** goes straight to the app, skipping the proxy. It exists only so
   you can confirm the app refuses protocol requests there. A real deployment must not expose
   this port.

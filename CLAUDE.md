@@ -72,7 +72,7 @@ contains `PixSmith.Authorization.API.csproj`.
 
 **OpenIddict over IdentityServer.** OpenIddict runs in-process, shares the EF Core `DbContext`, and integrates directly with ASP.NET Identity — no separate server process needed.
 
-**PKCE required for public clients.** The Blazor client (`blazor-client`) is a pre-seeded public client. The M2M client (`m2m-client`) is confidential and uses Client Credentials.
+**PKCE (S256 only) required per client, for every authorization-code client.** There's no server-wide switch. Each such client carries the OpenIddict PKCE requirement, set by `OidcAppService` and backfilled at startup by `PkcePolicy.EnforceAsync`. `plain` is disabled server-wide. The one exception is a client flagged PKCE-exempt for conformance-suite runs. It's honoured only while `Security:AllowPkceExemptClients` is true, and the server refuses to start with that on in Production. The Blazor client (`blazor-client`) is a pre-seeded public client. The M2M client (`m2m-client`) is confidential and uses Client Credentials.
 
 **Error handling via Result<T>.** Domain methods return `Result<T>` instead of throwing exceptions. Infrastructure and service layers map these to HTTP responses in controllers.
 
