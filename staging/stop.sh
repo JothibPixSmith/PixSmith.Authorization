@@ -12,16 +12,27 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Must match whatever started the stack: the two engines keep separate containers,
+# images and networks, so stopping with the wrong one silently finds nothing.
+ENGINE="${CONTAINER_ENGINE:-podman}"
+
 MODE="${1:-}"
 ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 
+# Existence is checked first because the engines disagree: `podman rm -f` exits 0 for a
+# container that was never there, while `docker rm -f` exits 1. Relying on the exit code
+# would report "removed" for things that did not exist.
 for c in pixsmith-staging-proxy pixsmith-staging-authserver; do
-    docker rm -f "$c" >/dev/null 2>&1 && ok "removed $c" || ok "$c was not running"
+    if $ENGINE container exists "$c" 2>/dev/null || $ENGINE inspect "$c" >/dev/null 2>&1; then
+        $ENGINE rm -f "$c" >/dev/null 2>&1 && ok "removed $c"
+    else
+        ok "$c was not running"
+    fi
 done
 
 case "$MODE" in
     --all|--purge)
-        docker stop pixsmith-staging-postgres >/dev/null 2>&1 && ok "stopped pixsmith-staging-postgres" \
+        $ENGINE stop pixsmith-staging-postgres >/dev/null 2>&1 && ok "stopped pixsmith-staging-postgres" \
             || ok "pixsmith-staging-postgres was not running"
         ;;
 esac
@@ -31,9 +42,9 @@ if [ "$MODE" = --purge ]; then
     printf 'Type "purge" to confirm: '
     read -r confirm
     if [ "$confirm" = purge ]; then
-        docker rm -f pixsmith-staging-postgres >/dev/null 2>&1 || true
-        docker volume rm pixsmith-staging-postgres-data pixsmith-staging-auth-data >/dev/null 2>&1 || true
-        docker network rm "${STAGING_NETWORK:-pixsmith-staging}" >/dev/null 2>&1 || true
+        $ENGINE rm -f pixsmith-staging-postgres >/dev/null 2>&1 || true
+        $ENGINE volume rm pixsmith-staging-postgres-data pixsmith-staging-auth-data >/dev/null 2>&1 || true
+        $ENGINE network rm "${STAGING_NETWORK:-pixsmith-staging}" >/dev/null 2>&1 || true
         rm -rf staging/secrets
         ok "volumes, network and staging/secrets/ removed"
     else

@@ -8,7 +8,7 @@
 # Alpine keeps the image small; switch to `postgres:17` (Debian) if you need a
 # locale or extension that is not available in the Alpine build.
 
-FROM postgres:17-alpine
+FROM docker.io/library/postgres:17-alpine
 
 # Scripts in this directory are executed by the official entrypoint exactly once,
 # on first startup, when the data directory is empty. They do NOT run again on a

@@ -1,16 +1,35 @@
-﻿@page "/authentication/{action}"
-@inject PixSmith.Authorization.BlazorClient.Services.JwtAuthStateProvider AuthProvider
-@inject NavigationManager Nav
+@page "/authentication/{action}"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+
+@*
+    Drives every leg of the redirect handshake: login, login-callback, logout,
+    logout-callback. These paths are the ones registered as the blazor-client's redirect
+    URIs by OpenIddictSeeder, so they must not be renamed without updating the seeder.
+*@
+<RemoteAuthenticatorView Action="@Action">
+    <LoggingIn>
+        <LoadingSpinner />
+    </LoggingIn>
+    <CompletingLoggingIn>
+        <LoadingSpinner />
+    </CompletingLoggingIn>
+    <LogOut>
+        <LoadingSpinner />
+    </LogOut>
+    <CompletingLogOut>
+        <LoadingSpinner />
+    </CompletingLogOut>
+    <LogOutFailed>
+        <ErrorAlert Message="Sign out did not complete. Close the browser to end the session." />
+    </LogOutFailed>
+    <LogInFailed>
+        <ErrorAlert Message="@Context?.ToString()" />
+    </LogInFailed>
+</RemoteAuthenticatorView>
 
 @code {
     [Parameter] public string? Action { get; set; }
 
-    protected override async Task OnInitializedAsync()
-    {
-        if (Action == "logout" || Action == "logout-callback")
-        {
-            await AuthProvider.LogOutAsync();
-            Nav.NavigateTo("/login");
-        }
-    }
+    [SupplyParameterFromQuery(Name = "message")]
+    public string? Context { get; set; }
 }

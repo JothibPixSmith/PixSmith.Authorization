@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using PixSmith.Authorization.API.Models;
+using PixSmith.Authorization.API.Security;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
@@ -63,12 +66,15 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 	// ─── Token Endpoint ───────────────────────────────────────────────────────
 
 	[HttpPost("~/connect/token")]
+	[EnableRateLimiting(RateLimiting.AuthPolicy)]
 	public async Task<IActionResult> Exchange()
 	{
 		var request = HttpContext.GetOpenIddictServerRequest()
 			?? throw new InvalidOperationException("OpenIddict request not found.");
 
-		if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
+		if (request.IsAuthorizationCodeGrantType()
+			|| request.IsRefreshTokenGrantType()
+			|| request.IsDeviceCodeGrantType())
 		{
 			var principal = (await HttpContext.AuthenticateAsync(
 				OpenIddictServerAspNetCoreDefaults.AuthenticationScheme)).Principal;
@@ -99,45 +105,6 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 
-		if (request.IsPasswordGrantType())
-		{
-			var user = await connectService.FindUserByUsernameAsync(request.Username!);
-			if (user is null)
-				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
-				{
-					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
-					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "Invalid credentials."
-				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-
-			var validation = await connectService.ValidatePasswordAsync(user, request.Password!);
-			if (!validation.IsSuccess)
-				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
-				{
-					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
-					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = validation.Error
-				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-
-			// OpenIddict passes unrecognised parameters through, which is how a company is
-			// selected without inventing a non-standard endpoint.
-			var organization = (string?)request.GetParameter("organization");
-
-			var decision = await connectService.AuthorizeTenantAccessAsync(
-				user, request.ClientId, organization);
-
-			if (!decision.IsAllowed)
-			{
-				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
-				{
-					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
-					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = decision.Error,
-				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-			}
-
-			var identity = await connectService.BuildIdentityAsync(
-				user, request.GetScopes(), request.ClientId, decision.Context);
-			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-		}
-
 		if (request.IsClientCredentialsGrantType())
 		{
 			var identity = await connectService.BuildClientCredentialsIdentityAsync(
@@ -147,6 +114,110 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 
 		throw new InvalidOperationException($"Unsupported grant type: {request.GrantType}");
 	}
+
+	// ─── End-User Verification (device authorization grant) ──────────────────
+	//
+	// Where the human approves a device-flow request. The device never sees the password:
+	// it polls the token endpoint while the person authenticates here in a browser. That is
+	// what lets the password grant be removed without leaving non-browser callers — the
+	// provisioning scripts — unable to obtain a user's token.
+
+	[HttpGet("~/connect/verify")]
+	public async Task<IActionResult> Verify()
+	{
+		var request = HttpContext.GetOpenIddictServerRequest()
+			?? throw new InvalidOperationException("OpenIddict request not found.");
+
+		// Sign in first: approving a device must be an authenticated act.
+		var cookie = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+		if (!cookie.Succeeded)
+		{
+			return Challenge(
+				authenticationSchemes: IdentityConstants.ApplicationScheme,
+				properties: new AuthenticationProperties
+				{
+					RedirectUri = Request.PathBase + Request.Path + QueryString.Create(
+						Request.HasFormContentType ? Request.Form.ToList() : Request.Query.ToList())
+				});
+		}
+
+		// No code yet: let them type the one the device displayed.
+		if (string.IsNullOrEmpty(request.UserCode))
+			return View("Verify", new VerifyModel());
+
+		// OpenIddict resolves the user code to the principal stored for that device request.
+		var device = await HttpContext.AuthenticateAsync(
+			OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+		if (!device.Succeeded)
+		{
+			return View("Verify", new VerifyModel
+			{
+				UserCode = request.UserCode,
+				Error = "That code is not valid, or it has expired. Check the device and try again.",
+			});
+		}
+
+		return View("Verify", new VerifyModel
+		{
+			UserCode = request.UserCode,
+			ClientId = device.Principal!.GetClaim(Claims.ClientId) ?? request.ClientId,
+			Scope = string.Join(" ", device.Principal!.GetScopes()),
+		});
+	}
+
+	[HttpPost("~/connect/verify")]
+	[ValidateAntiForgeryToken]
+	public async Task<IActionResult> VerifyAccept([FromForm] VerifyModel model)
+	{
+		var cookie = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+		if (!cookie.Succeeded)
+			return Challenge(IdentityConstants.ApplicationScheme);
+
+		var user = await connectService.FindUserByIdentityPrincipalAsync(cookie.Principal!);
+		if (user is null) throw new InvalidOperationException("User not found.");
+
+		var device = await HttpContext.AuthenticateAsync(
+			OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+		if (!device.Succeeded)
+		{
+			return View("Verify", new VerifyModel
+			{
+				UserCode = model.UserCode,
+				Error = "That code is not valid, or it has expired. Check the device and try again.",
+			});
+		}
+
+		var clientId = device.Principal!.GetClaim(Claims.ClientId);
+
+		// The same tenancy decision every other grant makes. Approving at a browser must not
+		// be a way around a membership or subscription the policy would refuse.
+		var decision = await connectService.AuthorizeTenantAccessAsync(
+			user, clientId, (string?)device.Principal!.GetClaim("org_id"));
+
+		if (!decision.IsAllowed)
+		{
+			return View("Verify", new VerifyModel
+			{
+				UserCode = model.UserCode,
+				ClientId = clientId,
+				Error = decision.Error,
+			});
+		}
+
+		var identity = await connectService.BuildIdentityAsync(
+			user, device.Principal!.GetScopes(), clientId, decision.Context);
+
+		// Signing in here is what marks the device code redeemable; the waiting device's next
+		// poll of the token endpoint then succeeds.
+		return SignIn(new ClaimsPrincipal(identity),
+			new AuthenticationProperties { RedirectUri = "/connect/verify/done" },
+			OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+	}
+
+	[HttpGet("~/connect/verify/done")]
+	public IActionResult VerifyDone() => View("VerifyDone");
 
 	// ─── UserInfo Endpoint ────────────────────────────────────────────────────
 

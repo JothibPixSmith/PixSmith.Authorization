@@ -36,6 +36,9 @@
     </div>
 
     <script src="_framework/blazor.webassembly.js"></script>
+    <!-- Required by Microsoft.AspNetCore.Components.WebAssembly.Authentication: drives the
+         redirect handshake. Served from this origin, not a CDN. -->
+    <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
     
 </body>
 </html>

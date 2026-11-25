@@ -31,18 +31,9 @@ public sealed class TenantProvisioningTests : IAsyncLifetime
         _factory = new SecurityWebApplicationFactory();
         _client = _factory.CreateApiClient();
 
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", SecurityWebApplicationFactory.AdminEmail),
-            new("password", SecurityWebApplicationFactory.AdminPassword),
-            new("client_id", "blazor-client"),
-            new("scope", "openid profile email roles api admin"),
-        ]));
-
-        response.EnsureSuccessStatusCode();
-        _adminToken = (await response.Content.ReadFromJsonAsync<JsonElement>())
-            .GetProperty("access_token").GetString()!;
+        _adminToken = await _factory.GetUserTokenAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail,
+            "openid profile email roles api admin");
     }
 
     public Task DisposeAsync()

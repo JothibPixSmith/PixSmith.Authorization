@@ -23,23 +23,14 @@ public sealed class UserInfoTests : IAsyncLifetime
         _factory = new SecurityWebApplicationFactory();
         _client = _factory.CreateApiClient();
 
-        await _factory.RegisterClientAsync("tenant-app", ["password"], ["openid", "api"]);
+        await _factory.RegisterClientAsync("tenant-app", ["authorization_code"], ["openid", "api"]);
         var tenantId = await _factory.CreateTenantAsync("Acme Corp");
         _userId = await _factory.CreateUserAsync("alice");
         await _factory.AddMemberAsync(tenantId, _userId, ["Member"]);
         await _factory.SubscribeAsync(tenantId, "tenant-app");
 
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", "alice@test.local"),
-            new("password", SecurityWebApplicationFactory.UserPassword),
-            new("client_id", "tenant-app"),
-            new("scope", "openid api"),
-        ]));
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        _accessToken = body.GetProperty("access_token").GetString()!;
+        _accessToken = await _factory.GetUserTokenAsync(
+            "tenant-app", "alice@test.local", "openid api");
     }
 
     public Task DisposeAsync()

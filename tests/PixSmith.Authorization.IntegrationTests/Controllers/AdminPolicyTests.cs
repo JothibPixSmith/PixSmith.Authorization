@@ -40,21 +40,9 @@ public sealed class AdminPolicyTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private async Task<string> AdminTokenAsync(string scope)
-    {
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", SecurityWebApplicationFactory.AdminEmail),
-            new("password", SecurityWebApplicationFactory.AdminPassword),
-            new("client_id", "blazor-client"),
-            new("scope", scope),
-        ]));
-
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        return body.GetProperty("access_token").GetString()!;
-    }
+    private Task<string> AdminTokenAsync(string scope) =>
+        _factory.GetUserTokenAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail, scope);
 
     private async Task<HttpStatusCode> GetAdminAsync(string token, string path = "/api/admin/tenants")
     {

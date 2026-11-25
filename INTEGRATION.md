@@ -27,7 +27,7 @@ The auth server answers *who is this*. Your app answers *what may they do here*.
 1. **SSO only exists if there is one session.** The session is a cookie on the auth server's domain. A login form in your app means a second, independent session — users sign in twice and signing out of one leaves the other live.
 2. **Your app never touches credentials.** It only ever sees an authorization code and tokens. A compromise of your app cannot leak passwords.
 3. **MFA, lockout, email confirmation, password reset, and the Google/Microsoft external logins live in one place.** A login form per app either re-implements all of it or quietly loses it.
-4. **The only way to have a local login form is the password grant (ROPC)** — removed in OAuth 2.1, incompatible with external identity providers, MFA, and consent. The Blazor admin UI in this repo uses ROPC for its own first-party login; do not copy that pattern into a new app.
+4. **The only way to have a local login form is the password grant (ROPC)** — removed in OAuth 2.1, incompatible with external identity providers, MFA, and consent. This server does not support it at all: it is absent from `grant_types_supported` and the token endpoint refuses it. Non-browser callers that need a user's token use the device authorization grant instead.
 
 ---
 
@@ -409,7 +409,7 @@ For the interactive flow, open `/connect/authorize?client_id=…&response_type=c
 
 Three things had to be fixed before an external app could integrate at all:
 
-**1. A server-rendered login page now exists.** `/connect/authorize` challenges the Identity application cookie, but nothing in this app ever issued that cookie — the Blazor admin UI signs in over the password grant, which validates credentials without creating a session. The challenge redirected to Identity's default `/Account/Login`, which didn't exist, fell through to the Blazor SPA, and looped forever. Added:
+**1. A server-rendered login page now exists.** `/connect/authorize` challenges the Identity application cookie, but nothing in this app issued that cookie at the time — the Blazor admin UI then signed in over the password grant, which validates credentials without creating a session. The challenge redirected to Identity's default `/Account/Login`, which didn't exist, fell through to the Blazor SPA, and looped forever. Added:
 
 - [LoginController.cs](src/AuthServer/AuthServer.API/Controllers/LoginController.cs) — `GET`/`POST /Account/Login`, calls `PasswordSignInAsync`, honors `ReturnUrl` (validated with `Url.IsLocalUrl` against open redirects), handles lockout / unconfirmed email / 2FA-required
 - [Views/Login/Index.cshtml](src/AuthServer/AuthServer.API/Views/Login/Index.cshtml) — the form, styled to match the Blazor UI
@@ -455,7 +455,7 @@ Three things had to be fixed before an external app could integrate at all:
   data-protection keyring has nowhere to live, and in a container the default path may not even
   be writable — the admin seeder fails at startup generating an email-confirmation token. It
   also protects OpenIddict's tokens, so losing the directory signs everyone out.
-- **Rotate the seeded M2M secret** (`m2m-super-secret-change-in-production`) via
+- **Set the M2M secret** (it is deliberately absent from `appsettings.json`, and startup fails without it) via
   `POST /api/admin/oidc-apps/{clientId}/rotate-secret`, or **Rotate secret** on the
   Admin → OIDC Apps page. The response carries the new value once and it is stored hashed
   thereafter, so copy it immediately. Rotation is deliberately a separate endpoint from

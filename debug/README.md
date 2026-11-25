@@ -75,8 +75,12 @@ never leave your machine.
 ./debug/provision.sh raw PUT /api/admin/tenants/<id> '{"name":"Renamed"}'
 ```
 
-The helper obtains an admin token, signs the canonical payload with two dev keys, and sends
-the request. Override the signer set to exercise the quorum:
+The helper obtains an admin token through the **device authorization grant**, signs the
+canonical payload with two dev keys, and sends the request. It will print a URL and a code and
+then wait: open the URL, sign in as an administrator, and approve. The password grant it used
+to use has been removed, so this script never handles a password — and a provisioning step that
+cannot complete without a person at a browser is the same property the signature quorum exists
+to guarantee. Override the signer set to exercise the quorum:
 
 ```bash
 PROVISION_SIGNERS="dev-alice"           ./debug/provision.sh create '{"name":"X"}'  # 403

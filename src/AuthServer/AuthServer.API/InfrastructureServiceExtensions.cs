@@ -93,6 +93,9 @@ public static class InfrastructureServiceExtensions
 		// The application cookie is the shared SSO session. /connect/authorize challenges
 		// this scheme, so LoginPath must point at the server-rendered login page —
 		// Identity's default (/Account/Login as a Razor Page) does not exist in this app.
+		// See CookieHardening for why this is conditional rather than always strict.
+		var cookiePolicy = Security.CookieHardening.ForEnvironment(environment);
+
 		services.ConfigureApplicationCookie(options =>
 		{
 			options.LoginPath        = "/Account/Login";
@@ -101,12 +104,44 @@ public static class InfrastructureServiceExtensions
 			options.ExpireTimeSpan   = TimeSpan.FromHours(8);
 			options.SlidingExpiration = true;
 
+			// __Host- is enforced by the browser, not just advisory: it refuses the cookie
+			// unless it is Secure, has Path=/ and carries no Domain. That makes it impossible
+			// for a sibling subdomain — or anything that manages to answer on plain HTTP — to
+			// plant a session cookie this server would then accept.
+			options.Cookie.Name = cookiePolicy.Name("Identity");
+			options.Cookie.Path = "/";
+
 			// Lax (the default) is required, not Strict: the browser arrives at
 			// /connect/authorize as a cross-site redirect from the client app and the
 			// cookie must be sent on that top-level GET or SSO silently fails.
 			options.Cookie.SameSite = SameSiteMode.Lax;
 			options.Cookie.HttpOnly = true;
-			options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+			options.Cookie.SecurePolicy = cookiePolicy.SecurePolicy;
+		});
+
+		// The external-login cookie is short-lived but still carries a partially
+		// authenticated identity, so it gets the same treatment. Configured now rather than
+		// when a Google/Microsoft provider is first wired up, which is exactly when nobody
+		// would think to come back and harden it.
+		services.ConfigureExternalCookie(options =>
+		{
+			options.Cookie.Name = cookiePolicy.Name("Identity-External");
+			options.Cookie.Path = "/";
+			options.Cookie.HttpOnly = true;
+			options.Cookie.SecurePolicy = cookiePolicy.SecurePolicy;
+		});
+
+		// Antiforgery has no AddAntiforgery call by default, so it ran on framework defaults
+		// — which do not set Secure. The token it protects is only useful to an attacker who
+		// can also read it, and a cookie without Secure is readable by anyone who can
+		// downgrade a single request to plain HTTP.
+		services.AddAntiforgery(options =>
+		{
+			options.Cookie.Name = cookiePolicy.Name("Antiforgery");
+			options.Cookie.Path = "/";
+			options.Cookie.HttpOnly = true;
+			options.Cookie.SameSite = SameSiteMode.Strict;
+			options.Cookie.SecurePolicy = cookiePolicy.SecurePolicy;
 		});
 
 		// ─── OpenIddict ────────────────────────────────────────────────────
@@ -127,7 +162,9 @@ public static class InfrastructureServiceExtensions
 					   .SetEndSessionEndpointUris("/connect/logout")
 					   .SetIntrospectionEndpointUris("/connect/introspect")
 					   .SetRevocationEndpointUris("/connect/revoke")
-					   .SetJsonWebKeySetEndpointUris("/.well-known/jwks");
+					   .SetJsonWebKeySetEndpointUris("/.well-known/jwks")
+					   .SetDeviceAuthorizationEndpointUris("/connect/deviceauthorization")
+					   .SetEndUserVerificationEndpointUris("/connect/verify");
 
 				// Supported flows.
 				//
@@ -136,9 +173,14 @@ public static class InfrastructureServiceExtensions
 				// PkcePolicy.EnforceAsync in the seeder backfills it at startup, before the server
 				// accepts requests). That is what lets a single, gated conformance-test client be
 				// exempt. See PkcePolicy.
+				// The device authorization grant replaces the password grant for non-browser
+				// callers that still need a *user's* token — notably the provisioning scripts,
+				// which cannot use client credentials because tenant provisioning refuses
+				// machine identities by design. It keeps the human in the loop (they approve in
+				// a browser) without any program ever handling their password.
 				options.AllowAuthorizationCodeFlow()
 					   .AllowClientCredentialsFlow()
-					   .AllowPasswordFlow()
+					   .AllowDeviceAuthorizationFlow()
 					   .AllowRefreshTokenFlow();
 
 				// S256 only. AllowAuthorizationCodeFlow() also enables "plain", where the
@@ -171,6 +213,11 @@ public static class InfrastructureServiceExtensions
 					.EnableTokenEndpointPassthrough()
 					.EnableUserInfoEndpointPassthrough()
 					.EnableEndSessionEndpointPassthrough()
+					// The verification endpoint is a page the human interacts with, so it is
+					// handled by ConnectController rather than by OpenIddict directly. The
+					// device authorization endpoint is machine-to-machine and needs no
+					// passthrough — OpenIddict mints the device and user codes itself.
+					.EnableEndUserVerificationEndpointPassthrough()
 					.EnableStatusCodePagesIntegration();
 
 				if (environment.IsDevelopment())

@@ -22,7 +22,8 @@ dotnet test tests/PixSmith.Authorization.IntegrationTests
 ./debug/start.sh
 
 # Production-shaped staging stack: Release image, Staging environment, TLS proxy at
-# https://localhost:8443. No debugger. See staging/README.md.
+# https://localhost:8443. No debugger. Uses podman (CONTAINER_ENGINE=docker to switch).
+# The debug stack above still uses docker. See staging/README.md.
 ./staging/start.sh
 ```
 
@@ -64,7 +65,7 @@ contains `PixSmith.Authorization.API.csproj`.
 | `PixSmith.Authorization.DataContext` | `ApplicationDbContext` combining Identity + OpenIddict + custom tables (`UserProfile`, `OAuthClientRegistration`, `AuditLog`) |
 | `PixSmith.Authorization.Repositories` | EF Core implementations of `IUserRepository` / `IOAuthClientRepository` |
 | `PixSmith.Authorization.Services` | `UserService`, `OAuthClientService`, `PasswordHashingService`, `EmailService` (stub) |
-| `BlazorClient` | Blazor WASM admin UI, served by the API at the same origin. Signs in with the **password grant** via `JwtAuthStateProvider` (not `AddOidcAuthentication`), stores tokens in `localStorage`, and reads claims from `/api/account/me` rather than parsing the token |
+| `BlazorClient` | Blazor WASM admin UI, served by the API at the same origin. Signs in with **authorization code + PKCE** via `AddOidcAuthentication`, redirecting to the server's own login page; `ApiAuthorizationMessageHandler` attaches the token. It never handles a password |
 
 ### Key design points
 
@@ -78,7 +79,29 @@ contains `PixSmith.Authorization.API.csproj`.
 
 **Database migrates on startup.** `Program.cs` calls `db.Database.MigrateAsync()` before the host starts. `Database:Provider` selects SQLite (default, `auth.db`) or Postgres; migrations live in two provider-specific projects and **both must be generated** for any model change, or the other provider fails at runtime.
 
-**Tenancy is enforced.** A user reaches an application when they are an active member of an active company that subscribes to that client — checked at `/connect/authorize`, on the password grant, and on every refresh. Tokens carry `org_id`, `org_slug` and a plural `roles` claim (company roles); the singular `role` claim carries platform Identity roles and is separate. `TenantEnforcement:PlatformClients` exempts clients that administer the server itself. See `docs/MULTI-TENANCY.md`.
+**Tenancy is enforced.** A user reaches an application when they are an active member of an active company that subscribes to that client — checked at `/connect/authorize`, at device-flow approval, and on every refresh. Tokens carry `org_id`, `org_slug` and a plural `roles` claim (company roles); the singular `role` claim carries platform Identity roles and is separate. `TenantEnforcement:PlatformClients` exempts clients that administer the server itself. See `docs/MULTI-TENANCY.md`.
+
+**Credential endpoints are rate limited.** `/connect/token`, the login form, registration and
+password reset are capped per client IP **per endpoint** (default 20/60s, `RateLimiting:*`).
+Identity's lockout caps failures against one account; this is what bounds credential stuffing
+across many accounts and CPU exhaustion through the password hasher. Buckets are per endpoint so
+a flood against one cannot deny the others to the same address.
+
+**Registration cannot be used to enumerate accounts.** `POST /api/account/register` returns a
+byte-identical 200 whether or not the address was taken; the real owner is told by email instead.
+Password-policy failures are still reported, since they disclose nothing about other accounts.
+
+**The login page executes no JavaScript.** It is served with
+`default-src 'none'; style-src 'self'; …` and its styles come from `/css/auth.css` in the API's
+own `wwwroot`, not a CDN. If you add a utility class to a view, add the rule to that file — there
+is no build step. The Blazor admin UI still loads Tailwind from a CDN, so its CSP is looser.
+
+**There is no password grant.** It was removed: a pen test flagged it, and its only users were
+the admin UI (now authorization code + PKCE) and the provisioning scripts. Those now use the
+**device authorization grant** (RFC 8628) — `provisioning-cli` requests a code, a human approves
+it at `/connect/verify`, and the script polls `/connect/token`. Nothing but the server's own login
+page ever receives a password. Integration tests drive the real redirect flow through
+`SecurityWebApplicationFactory.GetUserTokenAsync`.
 
 **Administering the server needs both the `Admin` role and the `admin` scope.** Neither alone: the role without the scope lets any token an administrator holds administer, the scope without the role lets a machine client administer with no human involved.
 
@@ -101,4 +124,6 @@ All protocol endpoints live under `ConnectController`:
 
 ### Secrets
 
-Google and Microsoft OAuth credentials are kept in `dotnet user-secrets` (UserSecretsId: `authserver-api-secrets`), not in `appsettings.json`. The seeded M2M client secret (`"m2m-super-secret-change-in-production"`) must be rotated before any production deployment.
+Google and Microsoft OAuth credentials are kept in `dotnet user-secrets` (UserSecretsId: `authserver-api-secrets`), not in `appsettings.json`.
+
+The M2M client secret is **not** in `appsettings.json` either — a secret committed to the repository is a known secret. Supply it per environment and startup fails without it: `dotnet user-secrets set "OpenIddict:M2MClient:ClientSecret" "$(openssl rand -base64 32)"` locally, `M2M_CLIENT_SECRET` in `.env` for the debug stack, generated into `staging/secrets/` by `staging/start.sh`.

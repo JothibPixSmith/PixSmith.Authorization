@@ -63,3 +63,43 @@ once.
 - **Self-signed TLS** is fine for staging but not for production, where you need a real
   certificate.
 - **Email** goes to the same stub SMTP settings as Development (`localhost:1025`).
+
+## Rate limits during a pen test
+
+The credential endpoints (`/connect/token`, the login form, registration, password reset) are
+capped at 20 requests per 60 seconds **per client IP per endpoint**. Staging runs the same
+limits as production so the stack stays representative, which means a brute-force or
+credential-stuffing run will start getting `429` with a `Retry-After` — that is the control
+working.
+
+If you are testing something else and the limiter is in the way, raise or remove it:
+
+```bash
+RATE_LIMIT_PERMITS=100000 ./staging/start.sh     # effectively off, middleware still in path
+RATE_LIMITING_ENABLED=false ./staging/start.sh   # middleware bypassed entirely
+```
+
+Buckets are per endpoint, so exhausting the token endpoint does not throttle password resets
+from the same address. Partitioning is by client IP, which is only meaningful because the
+server refuses to believe `X-Forwarded-For` from anyone but the configured proxy — the stack
+asserts that at startup.
+
+## Container engine
+
+These scripts use **podman** by default. `CONTAINER_ENGINE=docker ./staging/start.sh` switches
+back; use the same engine for `stop.sh`, since the two keep separate containers, images and
+networks and the wrong one silently finds nothing to stop.
+
+Three podman-specific details are handled in the scripts, and are worth knowing if you edit them:
+
+- **Images are built with `--format docker`.** Podman's default OCI format silently discards
+  `HEALTHCHECK`, and the Postgres readiness wait depends on it — without the flag the stack hangs
+  at "waiting for health" and then fails.
+- **Remote images are fully qualified** (`docker.io/library/nginx:...`). Podman searches
+  `registry.fedoraproject.org` and `registry.access.redhat.com` before `docker.io` and prompts
+  when a short name is ambiguous, which would hang a non-interactive run.
+- **Locally built images carry a `localhost/` prefix**, which is where podman stores them, so
+  `image inspect` and `run` agree about what exists.
+
+Rootless podman is fine: the proxy's static IP on the custom network works under netavark, and
+every published port is above 1024.

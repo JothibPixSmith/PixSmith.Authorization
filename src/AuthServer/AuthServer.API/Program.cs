@@ -30,6 +30,7 @@ builder.Services.AddHostedService<TenantBackfillSeeder>();
 // Controllers + Swagger.
 // Views are needed for the server-rendered login page that backs /connect/authorize.
 builder.Services.AddControllersWithViews();
+builder.Services.AddAuthRateLimiting(builder.Configuration);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -86,6 +87,13 @@ else
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseSerilogRequestLogging();
+
+// Explicit UseRouting so the endpoint — and therefore its [EnableRateLimiting] policy — is
+// already selected when the limiter runs. Before authentication, so an unauthenticated flood
+// is rejected without doing password-hashing work first.
+app.UseRouting();
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

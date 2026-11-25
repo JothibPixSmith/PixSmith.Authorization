@@ -1,7 +1,7 @@
 ﻿@inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @inject NavigationManager Nav
-@inject PixSmith.Authorization.BlazorClient.Services.JwtAuthStateProvider AuthProvider
 
 <div class="min-h-screen bg-gray-50 flex flex-col">
     <!-- Top Navbar -->
@@ -60,7 +60,10 @@
 @code {
     private async Task SignOut()
     {
-        await AuthProvider.LogOutAsync();
+        // Goes through the server's end-session endpoint so the shared SSO cookie is
+        // cleared too — clearing only local state would leave the user still signed in to
+        // the authorization server, and the next sign-in would skip the login page.
+        Nav.NavigateToLogout("authentication/logout");
         Nav.NavigateTo("/login");
     }
 }

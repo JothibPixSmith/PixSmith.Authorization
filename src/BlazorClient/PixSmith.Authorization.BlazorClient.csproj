@@ -10,6 +10,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.*" />
+    <!-- Authorization-code + PKCE sign-in, replacing the password grant the admin UI used
+         to post directly to /connect/token. -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.*" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.*" />
   </ItemGroup>
 

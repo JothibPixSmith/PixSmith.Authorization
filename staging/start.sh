@@ -31,23 +31,38 @@ REPO_ROOT="$PWD"
 # Deliberately not read from .env: that file configures the debug stack, and sharing it
 # would let a debug-only setting leak into what is meant to look like production.
 
+# Podman by default. Set CONTAINER_ENGINE=docker to go back — every command used here
+# exists in both, and the two keep separate image stores and networks, so the staging stack
+# under one engine is invisible to the other.
+ENGINE="${CONTAINER_ENGINE:-podman}"
+
+# Podman defaults to the OCI image format, which silently discards HEALTHCHECK — and the
+# Postgres readiness wait below depends on it, so without this the stack hangs there and
+# then fails. Docker builds in its own format already and has no such flag.
+BUILD_FORMAT=()
+# if/then rather than `[ ... ] && ...`: under `set -e` a false test on the last command of
+# the line would abort the script whenever the engine is docker.
+if [ "$ENGINE" = podman ]; then
+    BUILD_FORMAT=(--format docker)
+fi
+
 NETWORK="${STAGING_NETWORK:-pixsmith-staging}"
 SUBNET="${STAGING_SUBNET:-172.31.250.0/24}"
 PROXY_IP="${STAGING_PROXY_IP:-172.31.250.10}"
 
 PG_CONTAINER=pixsmith-staging-postgres
-PG_IMAGE=pixsmith/postgres:17
+PG_IMAGE=localhost/pixsmith/postgres:17
 PG_VOLUME=pixsmith-staging-postgres-data
 POSTGRES_DB=pixsmith_auth
 APP_DB_USER=pixsmith_app
 
 SERVER_CONTAINER=pixsmith-staging-authserver
-SERVER_IMAGE=pixsmith/authserver:staging
+SERVER_IMAGE=localhost/pixsmith/authserver:staging
 SERVER_VOLUME=pixsmith-staging-auth-data
 DIRECT_PORT="${STAGING_DIRECT_PORT:-8090}"
 
 PROXY_CONTAINER=pixsmith-staging-proxy
-PROXY_IMAGE=nginx:1.27-alpine
+PROXY_IMAGE=docker.io/library/nginx:1.27-alpine
 HTTPS_PORT=8443   # fixed: nginx.conf listens on it and the issuer URL includes it
 
 BASE_URI="https://localhost:${HTTPS_PORT}"
@@ -58,6 +73,16 @@ READY_TIMEOUT="${READY_TIMEOUT:-120}"
 
 # Off unless asked for. When on, a client flagged PKCE-exempt may use the authorization
 # code grant without PKCE, for conformance-suite plans that send no code_challenge:
+# Rate limits on the credential endpoints. Production-shaped by default so staging stays
+# representative. A pen test of something other than brute-force resistance will trip these,
+# so they are overridable from the environment:
+#
+#   RATE_LIMIT_PERMITS=100000 ./staging/start.sh     # effectively off, limiter still in path
+#   RATE_LIMITING_ENABLED=false ./staging/start.sh   # middleware bypassed entirely
+RATE_LIMITING_ENABLED="${RATE_LIMITING_ENABLED:-true}"
+RATE_LIMIT_PERMITS="${RATE_LIMIT_PERMITS:-20}"
+RATE_LIMIT_WINDOW="${RATE_LIMIT_WINDOW:-60}"
+
 #   STAGING_ALLOW_PKCE_EXEMPT=true ./staging/start.sh
 #   (PixSmith.PenTesting) ./tools/staging/seed-fixtures.py oidf-client create
 #   ... run the suite ...
@@ -72,9 +97,26 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Podman (netavark) exposes a network's subnets as .Subnets[].Subnet; Docker nests them
+# under .IPAM.Config[].Subnet. Each engine errors on the other's template, so try both —
+# and a non-existent network fails both, which is the signal to create it.
+network_subnet() {
+    $ENGINE network inspect -f '{{range .Subnets}}{{.Subnet}}{{end}}' "$1" 2>/dev/null \
+        || $ENGINE network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$1" 2>/dev/null
+}
+
+# Podman has reported health under both .State.Health.Status and .State.Healthcheck.Status
+# across versions, and Docker only uses the former. Try both rather than tie the script to
+# one engine's field name; an unknown container or one with no health check yields "".
+health_of() {
+    $ENGINE inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null \
+        || $ENGINE inspect -f '{{.State.Healthcheck.Status}}' "$1" 2>/dev/null \
+        || true
+}
+
 command -v docker  >/dev/null 2>&1 || die "docker is not on PATH."
 command -v openssl >/dev/null 2>&1 || die "openssl is required to generate the staging secrets."
-docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable. Is it running?"
+$ENGINE info >/dev/null 2>&1 || die "the Docker daemon is not reachable. Is it running?"
 
 # ── 1. Secrets ───────────────────────────────────────────────────────────────
 
@@ -88,7 +130,7 @@ random_password() { printf 'Stg-9%s' "$(openssl rand -base64 24 | tr '+/' '-_' |
 
 # The database passwords are baked into the Postgres volume on first initialisation.
 # Regenerating them against an existing volume would lock the app out, so refuse.
-if [ ! -f "$SECRETS/db-app-password" ] && docker volume inspect "$PG_VOLUME" >/dev/null 2>&1; then
+if [ ! -f "$SECRETS/db-app-password" ] && $ENGINE volume inspect "$PG_VOLUME" >/dev/null 2>&1; then
     die "the database volume $PG_VOLUME exists but its passwords in staging/secrets/ are gone.
      Start over with: ./staging/stop.sh --purge"
 fi
@@ -162,12 +204,12 @@ PROVISIONING_ENV+=(-e "TenantProvisioning__RequiredSignatures=2")
 # host port-mapped traffic appears to come from — i.e. everyone.
 
 step "Network: $NETWORK ($SUBNET)"
-if existing="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$NETWORK" 2>/dev/null)"; then
+if existing="$(network_subnet "$NETWORK")"; then
     [ "$existing" = "$SUBNET" ] || die "network $NETWORK exists with subnet $existing, not $SUBNET.
      Remove it (./staging/stop.sh --purge) or set STAGING_SUBNET/STAGING_PROXY_IP to match."
     ok "already exists"
 else
-    docker network create --subnet "$SUBNET" "$NETWORK" >/dev/null \
+    $ENGINE network create --subnet "$SUBNET" "$NETWORK" >/dev/null \
         || die "could not create $NETWORK. If $SUBNET overlaps another network, set STAGING_SUBNET and STAGING_PROXY_IP."
     ok "created"
 fi
@@ -177,16 +219,17 @@ fi
 
 step "PostgreSQL: $PG_CONTAINER"
 
-docker image inspect "$PG_IMAGE" >/dev/null 2>&1 \
-    || docker build -t "$PG_IMAGE" "$REPO_ROOT/docker/postgres" >/dev/null \
+$ENGINE image inspect "$PG_IMAGE" >/dev/null 2>&1 \
+    || $ENGINE build ${BUILD_FORMAT[@]+"${BUILD_FORMAT[@]}"} \
+         -t "$PG_IMAGE" "$REPO_ROOT/docker/postgres" >/dev/null \
     || die "failed to build $PG_IMAGE"
 
-pg_state="$(docker inspect -f '{{.State.Status}}' "$PG_CONTAINER" 2>/dev/null)" || pg_state=missing
+pg_state="$($ENGINE inspect -f '{{.State.Status}}' "$PG_CONTAINER" 2>/dev/null)" || pg_state=missing
 case "$pg_state" in
     running) ok "already running" ;;
-    exited|created|paused) docker start "$PG_CONTAINER" >/dev/null; ok "restarted (was: $pg_state)" ;;
+    exited|created|paused) $ENGINE start "$PG_CONTAINER" >/dev/null; ok "restarted (was: $pg_state)" ;;
     missing)
-        docker run -d --name "$PG_CONTAINER" \
+        $ENGINE run -d --name "$PG_CONTAINER" \
             --network "$NETWORK" --network-alias postgres \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
@@ -202,27 +245,28 @@ esac
 
 printf '  waiting for health'
 for _ in $(seq 1 "$READY_TIMEOUT"); do
-    [ "$(docker inspect -f '{{.State.Health.Status}}' "$PG_CONTAINER" 2>/dev/null)" = healthy ] && break
+    [ "$(health_of "$PG_CONTAINER")" = healthy ] && break
     printf '.'; sleep 1
 done
 printf '\n'
-[ "$(docker inspect -f '{{.State.Health.Status}}' "$PG_CONTAINER")" = healthy ] \
-    || die "Postgres did not become healthy. Logs: docker logs $PG_CONTAINER"
+[ "$(health_of "$PG_CONTAINER")" = healthy ] \
+    || die "Postgres did not become healthy. Logs: $ENGINE logs $PG_CONTAINER"
 ok "healthy"
 
 # ── 4. Release image ─────────────────────────────────────────────────────────
 
 step "Building $SERVER_IMAGE (target: runtime, Release)"
-docker build --target runtime -t "$SERVER_IMAGE" "$REPO_ROOT" >/dev/null 2>&1 \
-    || die "image build failed. To see why: docker build --target runtime -t $SERVER_IMAGE ."
+$ENGINE build ${BUILD_FORMAT[@]+"${BUILD_FORMAT[@]}"} \
+    --target runtime -t "$SERVER_IMAGE" "$REPO_ROOT" >/dev/null 2>&1 \
+    || die "image build failed. To see why: $ENGINE build --target runtime -t $SERVER_IMAGE ."
 ok "built"
 
 # ── 5. Auth server ───────────────────────────────────────────────────────────
 
 step "Auth server: $SERVER_CONTAINER"
-docker rm -f "$SERVER_CONTAINER" >/dev/null 2>&1 || true
+$ENGINE rm -f "$SERVER_CONTAINER" >/dev/null 2>&1 || true
 
-docker run -d --name "$SERVER_CONTAINER" \
+$ENGINE run -d --name "$SERVER_CONTAINER" \
     --network "$NETWORK" --network-alias authserver \
     -p "127.0.0.1:${DIRECT_PORT}:8080" \
     -v "$SERVER_VOLUME":/app/data \
@@ -240,6 +284,9 @@ docker run -d --name "$SERVER_CONTAINER" \
     -e OpenIddict__Certificates__Encryption__Password="$CERT_PASSWORD" \
     -e ForwardedHeaders__KnownProxies__0="$PROXY_IP" \
     -e Security__AllowPkceExemptClients="$ALLOW_PKCE_EXEMPT" \
+    -e RateLimiting__Enabled="$RATE_LIMITING_ENABLED" \
+    -e RateLimiting__Auth__PermitLimit="$RATE_LIMIT_PERMITS" \
+    -e RateLimiting__Auth__WindowSeconds="$RATE_LIMIT_WINDOW" \
     -e AdminSeed__Email="$ADMIN_EMAIL" \
     -e AdminSeed__Username=admin \
     -e AdminSeed__Password="$ADMIN_PASSWORD" \
@@ -250,9 +297,9 @@ ok "started"
 # ── 6. Proxy ─────────────────────────────────────────────────────────────────
 
 step "TLS proxy: $PROXY_CONTAINER ($PROXY_IP)"
-docker rm -f "$PROXY_CONTAINER" >/dev/null 2>&1 || true
+$ENGINE rm -f "$PROXY_CONTAINER" >/dev/null 2>&1 || true
 
-docker run -d --name "$PROXY_CONTAINER" \
+$ENGINE run -d --name "$PROXY_CONTAINER" \
     --network "$NETWORK" --ip "$PROXY_IP" \
     -p "127.0.0.1:${HTTPS_PORT}:8443" \
     -v "$REPO_ROOT/staging/nginx.conf":/etc/nginx/conf.d/default.conf:ro,z \
@@ -269,9 +316,9 @@ printf '  waiting for HTTPS'
 ready=""
 for _ in $(seq 1 "$READY_TIMEOUT"); do
     for c in "$SERVER_CONTAINER" "$PROXY_CONTAINER"; do
-        if [ "$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" != true ]; then
+        if [ "$($ENGINE inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" != true ]; then
             printf '\n'
-            docker logs --tail 40 "$c" 2>&1 | sed 's/^/     /'
+            $ENGINE logs --tail 40 "$c" 2>&1 | sed 's/^/     /'
             die "$c exited during startup (logs above)."
         fi
     done
@@ -281,7 +328,7 @@ for _ in $(seq 1 "$READY_TIMEOUT"); do
 done
 printf '\n'
 [ -n "$ready" ] || {
-    docker logs --tail 30 "$SERVER_CONTAINER" 2>&1 | sed 's/^/     /'
+    $ENGINE logs --tail 30 "$SERVER_CONTAINER" 2>&1 | sed 's/^/     /'
     die "no valid discovery document at $BASE_URI within ${READY_TIMEOUT}s (last HTTP ${code:-none})."
 }
 ok "serving at $BASE_URI"
@@ -305,12 +352,12 @@ direct="$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' \
      Forwarded headers are being trusted from someone other than the proxy."
 ok "plain HTTP with a spoofed X-Forwarded-Proto is refused (bypassing the proxy)"
 
-env_name="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$SERVER_CONTAINER" \
+env_name="$($ENGINE inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$SERVER_CONTAINER" \
     | sed -n 's/^ASPNETCORE_ENVIRONMENT=//p')"
 [ "$env_name" = Staging ] || die "ASPNETCORE_ENVIRONMENT is '$env_name', not Staging."
 ok "environment is Staging"
 
-if docker exec "$SERVER_CONTAINER" sh -c '[ -e /vsdbg ] || [ -d /usr/share/dotnet/sdk ]' 2>/dev/null; then
+if $ENGINE exec "$SERVER_CONTAINER" sh -c '[ -e /vsdbg ] || [ -d /usr/share/dotnet/sdk ]' 2>/dev/null; then
     die "the image contains a debugger or the .NET SDK — it was not built from the runtime target."
 fi
 ok "release runtime image (no SDK, no debugger)"
@@ -326,7 +373,7 @@ printf '  auth server   %s   (self-signed: curl --cacert staging/secrets/tls.crt
 printf '  discovery     %s/.well-known/openid-configuration\n' "$BASE_URI"
 printf '  admin         %s / password in staging/secrets/admin-password\n' "$ADMIN_EMAIL"
 printf '  direct (bypass, should refuse)  http://localhost:%s\n' "$DIRECT_PORT"
-printf '  logs          docker logs -f %s\n' "$SERVER_CONTAINER"
+printf '  logs          %s logs -f %s\n' "$ENGINE" "$SERVER_CONTAINER"
 printf '  tear down     ./staging/stop.sh   (--purge to delete data and secrets)\n\n'
 if [ "$ALLOW_PKCE_EXEMPT" = true ]; then
     warn "PKCE exemptions are ON. Delete the test client when done (PixSmith.PenTesting: ./tools/staging/seed-fixtures.py oidf-client delete)"

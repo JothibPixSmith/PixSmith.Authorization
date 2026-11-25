@@ -10,6 +10,13 @@ public sealed record RegisterUserRequest(
 	string? FirstName,
 	string? LastName);
 
+/// <summary>
+/// The registration endpoint's response. Deliberately carries no information about the
+/// account: it is returned identically whether a new user was created or the address already
+/// belonged to someone, so the endpoint cannot be used to enumerate accounts.
+/// </summary>
+public sealed record RegistrationAcceptedDto(string Message);
+
 public sealed record LoginRequest(
 	string Email,
 	string Password,

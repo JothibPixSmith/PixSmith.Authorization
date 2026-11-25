@@ -17,9 +17,9 @@ SECRETS="$PWD/staging/secrets"
 export PROVISION_BASE_URI=https://localhost:8443
 export PROVISION_KEY_DIR="$SECRETS/keys"
 export PROVISION_SIGNERS="${PROVISION_SIGNERS:-staging-alice staging-bob}"
-export PROVISION_ADMIN_EMAIL=admin@pixsmith.local
-PROVISION_ADMIN_PASSWORD="$(cat "$SECRETS/admin-password")"
-export PROVISION_ADMIN_PASSWORD
+# The admin password is deliberately not read here: approval happens at the server's login
+# page during the device-flow handshake. It stays in staging/secrets/admin-password for you
+# to type.
 export CURL_CA_BUNDLE="$SECRETS/tls.crt"   # curl's own variable; trusts the self-signed cert
 
 exec ./debug/provision.sh "$@"

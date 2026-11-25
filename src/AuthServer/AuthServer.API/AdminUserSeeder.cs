@@ -57,7 +57,16 @@ public sealed class AdminUserSeeder(
                 "Fix AdminSeed:Email/Username/Password and restart.");
         }
 
-        var roleResult = await adminService.AssignRoleAsync(result.Value!.Id, "Admin", ct);
+        // RegisterAsync answers neutrally so it cannot be used to enumerate accounts, which
+        // means it no longer hands back the new user's id. The seeder resolves it itself —
+        // and this doubles as a check that registration really did create the account, since
+        // a neutral success is also what a pre-existing address returns.
+        var identityUser = await userManager.FindByEmailAsync(email)
+            ?? throw new InvalidOperationException(
+                $"Admin seed reported success for {email} but no such user exists. " +
+                "Fix AdminSeed:Email/Username/Password and restart.");
+
+        var roleResult = await adminService.AssignRoleAsync(identityUser.Id, "Admin", ct);
         if (!roleResult.IsSuccess)
             throw new InvalidOperationException(
                 $"Admin user {email} was created but role assignment failed: {roleResult.Error}. " +
@@ -67,8 +76,7 @@ public sealed class AdminUserSeeder(
         // email: RequireConfirmedEmail=true would otherwise lock out the only admin account
         // on first boot if SMTP isn't configured/reachable yet. The seeder is itself the
         // trusted bootstrap authority, so this isn't bypassing anything a real user relies on.
-        var identityUser = await userManager.FindByIdAsync(result.Value.Id.ToString());
-        if (identityUser is not null && !identityUser.EmailConfirmed)
+        if (!identityUser.EmailConfirmed)
         {
             identityUser.EmailConfirmed = true;
             await userManager.UpdateAsync(identityUser);

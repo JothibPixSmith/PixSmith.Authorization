@@ -54,6 +54,11 @@ public static class TestServerHooks
         startInfo.EnvironmentVariables["ConnectionStrings__DefaultConnection"] = $"Data Source={tempDatabasePath}";
         startInfo.EnvironmentVariables["OpenIddict__BlazorClient__BaseUri"] = TestSettings.BaseUrl;
 
+        // Not in appsettings.json any more — a client secret in the repository is a known
+        // secret — so the spawned server gets a throwaway one for the duration of the run.
+        startInfo.EnvironmentVariables["OpenIddict__M2MClient__ClientSecret"] =
+            "ui-tests-only-not-a-real-secret";
+
         managedServerProcess = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start AuthServer.API for UI tests.");
 

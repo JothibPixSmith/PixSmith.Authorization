@@ -227,8 +227,9 @@ and it may well be, since a client is how an application gets tokens — the sam
 `[RequireProvisioningSignature]` attribute can be applied to those endpoints. That is a
 deliberate decision left to you, not an oversight.
 
-**Consider disabling the password grant for administrators.** The human check verifies the
-principal is a real user with a live `Admin` role, but a token obtained through the password
-grant also satisfies it — and that grant is exactly the one an application can perform with
-stored credentials. Removing `GrantTypes.Password` from any client an admin uses would make
-"interactive session" mean strictly what it says.
+**The password grant is gone.** It used to weaken this control: the human check verifies a real
+user with a live `Admin` role, and a token obtained through the password grant satisfied that
+while being exactly the grant a program can perform with stored credentials. The server no longer
+supports it. `debug/provision.sh` and `staging/provision.sh` use the device authorization grant,
+so obtaining the administrator's token now *requires* a person at a browser — which is the same
+property the signature quorum exists to guarantee.

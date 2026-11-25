@@ -480,7 +480,7 @@ public sealed class AccountApiService(HttpClient http) : IAccountApiService
         await http.GetFromJsonAsync<UserModel>("api/account/me");
 
     // These all return null on success, or a human-readable error message on failure —
-    // same convention as JwtAuthStateProvider.LoginAsync.
+    // null means success; a string is the error to show.
 
     public async Task<string?> RegisterAsync(string username, string email, string password, string confirmPassword,
         string? firstName, string? lastName)

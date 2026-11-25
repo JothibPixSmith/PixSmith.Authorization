@@ -1,8 +1,8 @@
 @page "/register"
+@using Microsoft.AspNetCore.Components.Authorization
 @using System.ComponentModel.DataAnnotations
 @inject IAccountApiService AccountApi
 @inject NavigationManager Nav
-@inject JwtAuthStateProvider AuthProvider
 
 <PageTitle>Create Account - AuthServer</PageTitle>
 
@@ -94,6 +94,10 @@
 </div>
 
 @code {
+    // Supplied by CascadingAuthenticationState in App.razor; replaces the direct dependency
+    // on the old auth-state provider.
+    [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
     private readonly RegisterForm _form = new();
     private string? _error;
     private bool _loading;
@@ -101,7 +105,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var authState = await AuthStateTask;
         if (authState.User.Identity?.IsAuthenticated == true)
             Nav.NavigateTo("/admin");
     }

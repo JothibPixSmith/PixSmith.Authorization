@@ -26,9 +26,9 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         _client = _factory.CreateApiClient();
 
         // Only the tenant-scoped client needs registering: "blazor-client" is seeded by
-        // OpenIddictSeeder on startup and already permits the password grant, which is what
-        // makes it usable here as the platform-client case.
-        await _factory.RegisterClientAsync("tenant-app", ["password"], ["openid", "api"]);
+        // OpenIddictSeeder on startup, which is what makes it usable here as the
+        // platform-client case.
+        await _factory.RegisterClientAsync("tenant-app", ["authorization_code"], ["openid", "api"]);
     }
 
     public Task DisposeAsync()
@@ -38,20 +38,15 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> TokenAsync(
-        string clientId, string userName, string scope = "openid api")
-    {
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", $"{userName}@test.local"),
-            new("password", SecurityWebApplicationFactory.UserPassword),
-            new("client_id", clientId),
-            new("scope", scope),
-        ]));
-
-        return (response.StatusCode, await response.Content.ReadFromJsonAsync<JsonElement>());
-    }
+    /// <summary>
+    /// Drives authorization code + PKCE, the way a browser does. The tenancy decision is made
+    /// at the authorization endpoint, so a refusal arrives as <c>error=access_denied</c> on the
+    /// redirect rather than as a failed token request.
+    /// </summary>
+    private Task<SecurityWebApplicationFactory.TokenOutcome> TokenAsync(
+        string clientId, string userName, string scope = "openid api",
+        string? organization = null) =>
+        _factory.TryGetUserTokenAsync(clientId, $"{userName}@test.local", scope, organization);
 
     /// <summary>
     /// Reads a claim that may be a single value or a list. A JWT collapses a single-valued
@@ -59,16 +54,17 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
     /// when the user holds one role and as an array when they hold several. Anything consuming
     /// the claim has to cope with both.
     /// </summary>
-    private static string?[] ClaimValues(JsonElement claims, string name) =>
+    // string[] rather than string?[]: a claim that is present always carries a string value,
+    // and a nullable element type makes Assert.Equal's IEquatable<T> constraint unsatisfiable.
+    private static string[] ClaimValues(JsonElement claims, string name) =>
         !claims.TryGetProperty(name, out var value) ? []
         : value.ValueKind == JsonValueKind.Array
-            ? [.. value.EnumerateArray().Select(v => v.GetString())]
-            : [value.GetString()];
+            ? [.. value.EnumerateArray().Select(v => v.GetString() ?? string.Empty)]
+            : [value.GetString() ?? string.Empty];
 
-    private static JsonElement Claims(JsonElement tokenBody)
+    private static JsonElement Claims(string accessToken)
     {
-        var jwt = tokenBody.GetProperty("access_token").GetString()!;
-        var payload = jwt.Split('.')[1];
+        var payload = accessToken.Split('.')[1];
         payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
         return JsonDocument.Parse(Convert.FromBase64String(
             payload.Replace('-', '+').Replace('_', '/'))).RootElement;
@@ -84,11 +80,11 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.AddMemberAsync(tenantId, userId, ["Member", "OrgAdmin"]);
         await _factory.SubscribeAsync(tenantId, "tenant-app");
 
-        var (status, body) = await TokenAsync("tenant-app", "alice");
+        var outcome = await TokenAsync("tenant-app", "alice");
 
-        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.True(outcome.Succeeded, outcome.ErrorDescription);
 
-        var claims = Claims(body);
+        var claims = Claims(outcome.AccessToken!);
         Assert.Equal(tenantId.ToString(), claims.GetProperty("org_id").GetString());
         Assert.Equal("acme-corp", claims.GetProperty("org_slug").GetString());
 
@@ -105,11 +101,11 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.AddMemberAsync(tenantId, userId, ["Member"]);
         // deliberately no subscription
 
-        var (status, body) = await TokenAsync("tenant-app", "bob");
+        var outcome = await TokenAsync("tenant-app", "bob");
 
-        Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Equal("access_denied", body.GetProperty("error").GetString());
-        Assert.Contains("not subscribed", body.GetProperty("error_description").GetString());
+        Assert.False(outcome.Succeeded);
+        Assert.Equal("access_denied", outcome.Error);
+        Assert.Contains("not subscribed", outcome.ErrorDescription);
     }
 
     [Fact]
@@ -117,10 +113,10 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
     {
         await _factory.CreateUserAsync("carol");
 
-        var (status, body) = await TokenAsync("tenant-app", "carol");
+        var outcome = await TokenAsync("tenant-app", "carol");
 
-        Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Equal("access_denied", body.GetProperty("error").GetString());
+        Assert.False(outcome.Succeeded);
+        Assert.Equal("access_denied", outcome.Error);
     }
 
     [Fact]
@@ -134,16 +130,16 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.AddMemberAsync(tenantId, colleague, ["Member"]);
         await _factory.SubscribeAsync(tenantId, "tenant-app");
 
-        var (deniedStatus, deniedBody) = await TokenAsync("tenant-app", "dan");
-        var (colleagueStatus, _) = await TokenAsync("tenant-app", "erin");
+        var deniedOutcome = await TokenAsync("tenant-app", "dan");
+        var colleagueOutcome = await TokenAsync("tenant-app", "erin");
 
-        Assert.Equal(HttpStatusCode.BadRequest, deniedStatus);
-        Assert.Equal("access_denied", deniedBody.GetProperty("error").GetString());
+        Assert.False(deniedOutcome.Succeeded);
+        Assert.Equal("access_denied", deniedOutcome.Error);
         // The administrative reason must not reach the denied user.
-        Assert.DoesNotContain("denied by test", deniedBody.GetProperty("error_description").GetString());
+        Assert.DoesNotContain("denied by test", deniedOutcome.ErrorDescription);
 
         // The whole point of a per-member denial: colleagues keep working.
-        Assert.Equal(HttpStatusCode.OK, colleagueStatus);
+        Assert.True(colleagueOutcome.Succeeded, colleagueOutcome.ErrorDescription);
     }
 
     [Fact]
@@ -156,8 +152,8 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
 
         await _factory.DeactivateTenantAsync(tenantId);
 
-        var (status, _) = await TokenAsync("tenant-app", "frank");
-        Assert.Equal(HttpStatusCode.BadRequest, status);
+        var outcome = await TokenAsync("tenant-app", "frank");
+        Assert.False(outcome.Succeeded);
     }
 
     // ── The platform exemption ────────────────────────────────────────────────
@@ -172,10 +168,10 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         var userId = await _factory.CreateUserAsync("amy");
         await _factory.AddMemberAsync(tenantId, userId, ["Member", "OrgAdmin"]);
 
-        var (status, body) = await TokenAsync("blazor-client", "amy");
+        var outcome = await TokenAsync("blazor-client", "amy");
 
-        Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Equal("access_denied", body.GetProperty("error").GetString());
+        Assert.False(outcome.Succeeded);
+        Assert.Equal("access_denied", outcome.Error);
     }
 
     [Fact]
@@ -185,10 +181,10 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         // waives tenancy, so she still needs the platform role.
         await _factory.CreateUserAsync("grace", platformRole: "Admin");
 
-        var (status, body) = await TokenAsync("blazor-client", "grace");
+        var outcome = await TokenAsync("blazor-client", "grace");
 
-        Assert.Equal(HttpStatusCode.OK, status);
-        Assert.False(Claims(body).TryGetProperty("org_id", out _));
+        Assert.True(outcome.Succeeded, outcome.ErrorDescription);
+        Assert.False(Claims(outcome.AccessToken!).TryGetProperty("org_id", out _));
     }
 
     [Fact]
@@ -204,10 +200,10 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.SubscribeAsync(acme, "tenant-app");
         await _factory.SubscribeAsync(globex, "tenant-app");
 
-        var (status, body) = await TokenAsync("tenant-app", "heidi");
-        var description = body.GetProperty("error_description").GetString()!;
+        var outcome = await TokenAsync("tenant-app", "heidi");
+        var description = outcome.ErrorDescription!;
 
-        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.False(outcome.Succeeded);
         Assert.Contains("acme-corp", description);
         Assert.Contains("globex", description);
     }
@@ -223,19 +219,11 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.AddMemberAsync(globex, userId, ["OrgAdmin"]);
         await _factory.SubscribeAsync(globex, "tenant-app");
 
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", "ivan@test.local"),
-            new("password", SecurityWebApplicationFactory.UserPassword),
-            new("client_id", "tenant-app"),
-            new("scope", "openid api"),
-            new("organization", "globex"),
-        ]));
+        var outcome = await TokenAsync("tenant-app", "ivan", organization: "globex");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(outcome.Succeeded, outcome.ErrorDescription);
 
-        var claims = Claims(await response.Content.ReadFromJsonAsync<JsonElement>());
+        var claims = Claims(outcome.AccessToken!);
         Assert.Equal(globex.ToString(), claims.GetProperty("org_id").GetString());
         // One role, so the claim is a scalar rather than an array — see ClaimValues.
         Assert.Equal(["OrgAdmin"], ClaimValues(claims, "roles"));
@@ -251,20 +239,9 @@ public sealed class TenancyEnforcementTests : IAsyncLifetime
         await _factory.AddMemberAsync(acme, userId, ["Member"]);
         await _factory.SubscribeAsync(globex, "tenant-app");
 
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new("grant_type", "password"),
-            new("username", "judy@test.local"),
-            new("password", SecurityWebApplicationFactory.UserPassword),
-            new("client_id", "tenant-app"),
-            new("scope", "openid api"),
-            new("organization", "globex"),
-        ]));
+        var outcome = await TokenAsync("tenant-app", "judy", organization: "globex");
 
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var description = body.GetProperty("error_description").GetString()!;
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.DoesNotContain("Globex", description);   // must not confirm it exists
+        Assert.False(outcome.Succeeded);
+        Assert.DoesNotContain("Globex", outcome.ErrorDescription!);   // must not confirm it exists
     }
 }

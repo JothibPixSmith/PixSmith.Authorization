@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
@@ -17,8 +18,14 @@ public sealed class AccountController(
 {
     // ─── Register ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Registers a user. Returns the same body and status whether or not the address was
+    /// already taken, so the endpoint cannot be used to enumerate accounts; a 400 only ever
+    /// reflects input the caller can fix, such as a password that fails the policy.
+    /// </summary>
     [HttpPost("register")]
-    [ProducesResponseType(typeof(UserDto), 200)]
+    [EnableRateLimiting(Security.RateLimiting.AuthPolicy)]
+    [ProducesResponseType(typeof(RegistrationAcceptedDto), 200)]
     [ProducesResponseType(typeof(ProblemDetails), 400)]
     public async Task<IActionResult> Register([FromBody] RegisterUserRequest request)
     {
@@ -65,6 +72,7 @@ public sealed class AccountController(
     // ─── Password Reset ───────────────────────────────────────────────────────
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(Security.RateLimiting.AuthPolicy)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
         await userService.ForgotPasswordAsync(request);
@@ -72,6 +80,7 @@ public sealed class AccountController(
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting(Security.RateLimiting.AuthPolicy)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
     {
         var result = await userService.ResetPasswordAsync(request);

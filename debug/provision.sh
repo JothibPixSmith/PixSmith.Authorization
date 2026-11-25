@@ -24,13 +24,15 @@ REPO_ROOT="$PWD"
 # PROVISION_* overrides win over .env, which describes the debug stack; staging/provision.sh
 # uses them to aim this script at the staging stack instead.
 BASE="${PROVISION_BASE_URI:-${AUTH_BASE_URI:-http://localhost:8080}}"
+# staging/provision.sh sets this to --cacert for its self-signed certificate.
+CURL_OPTS="${PROVISION_CURL_OPTS:-}"
 KEY_DIR="${PROVISION_KEY_DIR:-$REPO_ROOT/debug/keys}"
 # Threshold is 2; dev-carol is the spare. Override to exercise quorum behaviour, e.g.
 #   PROVISION_SIGNERS="dev-alice" ./debug/provision.sh create '{"name":"X"}'   -> refused
 IFS=' ' read -r -a SIGNERS <<< "${PROVISION_SIGNERS:-dev-alice dev-bob}"
 
-ADMIN_EMAIL="${PROVISION_ADMIN_EMAIL:-${ADMIN_SEED_EMAIL:-admin@pixsmith.local}}"
-ADMIN_PASSWORD="${PROVISION_ADMIN_PASSWORD:-${ADMIN_SEED_PASSWORD:-Admin1234!}}"
+# No admin credentials here any more. The device authorization grant sends the human to the
+# server's own login page, so this script never reads, holds or transmits a password.
 
 die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -45,12 +47,63 @@ case "${1:-}" in
 esac
 
 # An interactive human administrator is required in addition to the signatures — a machine
-# identity is refused outright, so this obtains a real user token.
-TOKEN="$(curl -sf -X POST "$BASE/connect/token" \
-    -d grant_type=password -d "username=$ADMIN_EMAIL" -d "password=$ADMIN_PASSWORD" \
-    -d client_id=blazor-client -d "scope=openid profile email roles api admin" \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')" \
-    || die "could not obtain an admin token from $BASE. Is the stack running?"
+# identity is refused outright — so this needs a real *user* token.
+#
+# It is obtained with the device authorization grant (RFC 8628) rather than the password
+# grant, which has been removed: this script never sees the password. The server shows a
+# code, a human approves it in a browser, and this polls until that happens. For a control
+# whose whole purpose is "no application provisions a tenancy for itself", a step that
+# cannot complete without a person at a browser is the right shape, not an inconvenience.
+
+CLI_CLIENT="${PROVISION_CLIENT_ID:-provisioning-cli}"
+
+device="$(curl -sf $CURL_OPTS -X POST "$BASE/connect/deviceauthorization" \
+    -d "client_id=$CLI_CLIENT" -d "scope=openid profile email roles admin")" \
+    || die "device authorization request failed against $BASE. Is the stack running?"
+
+read -r DEVICE_CODE USER_CODE VERIFY_URI INTERVAL <<<"$(printf '%s' "$device" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d["device_code"], d["user_code"],
+      d.get("verification_uri_complete") or d["verification_uri"],
+      d.get("interval", 5))')"
+
+printf "\n\033[1;36m▸ Approve this request\033[0m\n"
+printf "  open    %s\n" "$VERIFY_URI"
+printf "  code    \033[1m%s\033[0m\n" "$USER_CODE"
+printf "  sign in as an administrator, then approve.\n\n"
+printf "  waiting"
+
+TOKEN=""
+# device_code lifetime is 10 minutes by default; stop well inside it.
+deadline=$(( $(date -u +%s) + 300 ))
+while [ -z "$TOKEN" ] && [ "$(date -u +%s)" -lt "$deadline" ]; do
+    sleep "$INTERVAL"
+    printf '.'
+    response="$(curl -s $CURL_OPTS -X POST "$BASE/connect/token" \
+        -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+        -d "client_id=$CLI_CLIENT" -d "device_code=$DEVICE_CODE")"
+
+    TOKEN="$(printf '%s' "$response" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+# authorization_pending and slow_down mean "keep waiting"; anything else is fatal.
+if d.get("error") in ("authorization_pending", "slow_down"):
+    sys.exit(0)
+if "access_token" in d:
+    print(d["access_token"]); sys.exit(0)
+sys.stderr.write(d.get("error_description") or d.get("error") or "unknown error")
+sys.exit(3)' 2>/tmp/device-error)" || {
+        printf '\n'
+        die "device authorization failed: $(cat /tmp/device-error)"
+    }
+done
+printf '\n'
+
+[ -n "$TOKEN" ] || die "timed out waiting for approval."
 
 NONCE="$(head -c 24 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
 TIMESTAMP="$(date -u +%s)"

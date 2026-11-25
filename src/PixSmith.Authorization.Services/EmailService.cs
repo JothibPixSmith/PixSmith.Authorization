@@ -27,6 +27,19 @@ namespace PixSmith.Authorization.Services
 				""",
 				ct);
 
+		public Task SendRegistrationAttemptNoticeAsync(string email, string signInLink, CancellationToken ct = default) =>
+			outbox.EnqueueAsync(
+				email,
+				"Someone tried to register with your email address",
+				$"""
+				<p>We received a registration attempt for an account that already exists with this
+				email address. No new account was created and nothing has changed.</p>
+				<p>If this was you, sign in instead: <a href="{WebUtility.HtmlEncode(signInLink)}">Sign in</a></p>
+				<p>If it wasn't you, you can ignore this email. Consider changing your password if
+				you believe someone is targeting your account.</p>
+				""",
+				ct);
+
 		public Task SendWelcomeEmailAsync(string email, string fullName, CancellationToken ct = default) =>
 			outbox.EnqueueAsync(
 				email,

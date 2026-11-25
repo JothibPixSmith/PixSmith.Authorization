@@ -60,7 +60,6 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 				OpenIddictConstants.Permissions.Endpoints.Token,
 				OpenIddictConstants.Permissions.Endpoints.EndSession,
 				OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
-				OpenIddictConstants.Permissions.GrantTypes.Password,
 				OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
 				OpenIddictConstants.Permissions.ResponseTypes.Code,
 				OpenIddictConstants.Permissions.Scopes.Email,
@@ -85,12 +84,59 @@ public sealed class OpenIddictSeeder(IServiceProvider serviceProvider, IConfigur
 		else
 			await manager.UpdateAsync(blazorClient, blazorDescriptor, cancellationToken);
 
+		// ─── Seed Provisioning CLI Client (device authorization grant) ─────
+		//
+		// Tenant provisioning requires an interactive human administrator — a machine
+		// identity is refused by design — so the scripts cannot use client credentials.
+		// With the password grant gone, the device authorization grant is how a terminal
+		// obtains a user's token: it shows a code, the human approves it in a browser, and
+		// the script polls. No program ever handles the password.
+
+		var cliClientId = configuration["OpenIddict:ProvisioningCliClient:ClientId"]
+			?? "provisioning-cli";
+
+		var cliDescriptor = new OpenIddictApplicationDescriptor
+		{
+			ClientId = cliClientId,
+			// Public: a CLI on an operator's machine cannot keep a secret.
+			ClientType = OpenIddictConstants.ClientTypes.Public,
+			DisplayName = "Provisioning CLI",
+			Permissions =
+			{
+				OpenIddictConstants.Permissions.Endpoints.DeviceAuthorization,
+				OpenIddictConstants.Permissions.Endpoints.Token,
+				OpenIddictConstants.Permissions.GrantTypes.DeviceCode,
+				OpenIddictConstants.Permissions.Scopes.Email,
+				OpenIddictConstants.Permissions.Scopes.Profile,
+				OpenIddictConstants.Permissions.Scopes.Roles,
+				"scp:admin",
+			},
+		};
+
+		var cliClient = await manager.FindByClientIdAsync(cliClientId, cancellationToken);
+		if (cliClient is null)
+			await manager.CreateAsync(cliDescriptor, cancellationToken);
+		else
+			await manager.UpdateAsync(cliClient, cliDescriptor, cancellationToken);
+
 		// ─── Seed Machine-to-Machine (M2M) Client ──────────────────────────
 
 		var m2mClientId = configuration["OpenIddict:M2MClient:ClientId"]
 			?? throw new InvalidOperationException("OpenIddict:M2MClient:ClientId is required.");
 		var m2mSecret = configuration["OpenIddict:M2MClient:ClientSecret"]
-			?? throw new InvalidOperationException("OpenIddict:M2MClient:ClientSecret is required.");
+			?? throw new InvalidOperationException(
+				"""
+				OpenIddict:M2MClient:ClientSecret is not configured.
+
+				It is intentionally absent from appsettings.json: a client secret in the repository
+				is a known secret. Supply it per environment.
+
+				Locally:
+				  cd src/AuthServer/AuthServer.API
+				  dotnet user-secrets set "OpenIddict:M2MClient:ClientSecret" "$(openssl rand -base64 32)"
+
+				Containers: set M2M_CLIENT_SECRET in .env (debug) or the secret store (staging).
+				""");
 
 		if (await manager.FindByClientIdAsync(m2mClientId, cancellationToken) is null)
 		{

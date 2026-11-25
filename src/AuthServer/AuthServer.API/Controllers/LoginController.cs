@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.API.Models;
 using PixSmith.Authorization.Repositories.Interfaces;
@@ -43,6 +44,7 @@ public sealed class LoginController(
 
 	[HttpPost("~/Account/Login")]
 	[ValidateAntiForgeryToken]
+	[EnableRateLimiting(Security.RateLimiting.AuthPolicy)]
 	public async Task<IActionResult> Index(LoginInputModel model)
 	{
 		model.ReturnUrl = SafeReturnUrl(model.ReturnUrl);
