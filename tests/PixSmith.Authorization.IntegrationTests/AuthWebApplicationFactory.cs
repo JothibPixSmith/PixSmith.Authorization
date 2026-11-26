@@ -24,13 +24,10 @@ public class AuthWebApplicationFactory : WebApplicationFactory<Program>
     {
         connection.Open();
 
-        // The M2M client secret is no longer in appsettings.json — a secret committed to the
-        // repository is a known secret — so the test host supplies a throwaway one.
         // An environment variable rather than UseSetting/ConfigureAppConfiguration: those are
         // layered under the application's own configuration sources under minimal hosting and
         // are not visible to the startup seeders that read IConfiguration directly.
-        Environment.SetEnvironmentVariable(
-            "OpenIddict__M2MClient__ClientSecret", "integration-tests-only-not-a-real-secret");
+        TestSecrets.Ensure();
 
     }
 

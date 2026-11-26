@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,6 +29,7 @@ public sealed class LoginController(
 	SignInManager<IdentityUser<Guid>> signInManager,
 	UserManager<IdentityUser<Guid>> userManager,
 	ITenantRepository tenants,
+	Security.EfTicketStore ticketStore,
 	ILogger<LoginController> logger) : Controller
 {
 	[HttpGet("~/Account/Login")]
@@ -92,10 +94,52 @@ public sealed class LoginController(
 		return View(model);
 	}
 
+	/// <summary>
+	/// Ends this session. The cookie handler deletes the server-side ticket as part of
+	/// sign-out, so the session is revoked rather than merely forgotten by the browser —
+	/// a cookie captured beforehand stops working immediately.
+	/// </summary>
 	[HttpPost("~/Account/Logout")]
 	[ValidateAntiForgeryToken]
 	public async Task<IActionResult> Logout(string? returnUrl = null)
 	{
+		await signInManager.SignOutAsync();
+		return Redirect(SafeReturnUrl(returnUrl) ?? "/");
+	}
+
+	/// <summary>
+	/// Ends every session this user has anywhere — the "I think someone else is signed in as
+	/// me" action.
+	///
+	/// <para>
+	/// Does both halves deliberately. Deleting the tickets revokes existing sessions at once;
+	/// rotating the security stamp invalidates any cookie still in flight and stops a captured
+	/// one being reused, which deleting the rows alone cannot guarantee for a session created
+	/// in the same instant.
+	/// </para>
+	/// </summary>
+	[HttpPost("~/Account/LogoutEverywhere")]
+	[ValidateAntiForgeryToken]
+	public async Task<IActionResult> LogoutEverywhere(string? returnUrl = null)
+	{
+		// Authenticated explicitly: the Identity cookie is no longer the default scheme, so
+		// HttpContext.User is not it. Reading User here would find nothing and revoke
+		// nothing — silently, which is the worst way for this to fail.
+		var cookie = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+		var user = cookie.Succeeded && cookie.Principal is not null
+			? await userManager.GetUserAsync(cookie.Principal)
+			: null;
+
+		if (user is not null)
+		{
+			var revoked = await ticketStore.RemoveAllForUserAsync(user.Id);
+			await userManager.UpdateSecurityStampAsync(user);
+
+			logger.LogInformation(
+				"User {UserId} signed out everywhere; {Count} session(s) revoked.",
+				user.Id, revoked);
+		}
+
 		await signInManager.SignOutAsync();
 		return Redirect(SafeReturnUrl(returnUrl) ?? "/");
 	}

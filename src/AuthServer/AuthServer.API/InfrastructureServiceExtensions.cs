@@ -1,4 +1,5 @@
 ﻿using PixSmith.Authorization.Infrastructure.OpenIddict;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Identity;
@@ -93,6 +94,52 @@ public static class InfrastructureServiceExtensions
 		// The application cookie is the shared SSO session. /connect/authorize challenges
 		// this scheme, so LoginPath must point at the server-rendered login page —
 		// Identity's default (/Account/Login as a Razor Page) does not exist in this app.
+		// ─── Default authentication scheme ─────────────────────────────────
+		//
+		// AddIdentity makes the Identity cookie the default authenticate scheme, which means
+		// UseAuthentication reads it on every request that reaches the middleware. With a
+		// server-side session store that is a database round-trip — and because the admin UI
+		// is same-origin, the browser attaches the cookie to every /api/* call as well, none
+		// of which use it: those endpoints authorize with the bearer scheme.
+		//
+		// Measured on staging: one ticket-store query per cookie-bearing request to /api/* and
+		// to the SPA host page, costing roughly a Postgres round-trip each, for nothing.
+		//
+		// Pointing the default at the token validation scheme removes that work. Nothing
+		// depends on the old default: every [Authorize] in this codebase names its scheme (or
+		// goes through a policy that does), and the interactive endpoints call
+		// AuthenticateAsync(IdentityConstants.ApplicationScheme) explicitly. The challenge
+		// scheme is deliberately left alone, so a challenge still redirects to the login page.
+		services.AddAuthentication(options =>
+		{
+			options.DefaultAuthenticateScheme =
+				OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
+		});
+
+		// ─── Server-side sessions ──────────────────────────────────────────
+		// Without a session store the cookie *is* the session, so signing out deletes only
+		// the browser's copy and a cookie captured beforehand keeps working. See EfTicketStore.
+
+		services.Configure<Security.ServerSessionOptions>(
+			configuration.GetSection(Security.ServerSessionOptions.SectionName));
+
+		services.AddSingleton<Security.EfTicketStore>();
+		services.AddSingleton<ITicketStore>(sp => sp.GetRequiredService<Security.EfTicketStore>());
+		services.AddHostedService<Security.AuthenticationTicketCleanup>();
+
+		// Set through the options pipeline rather than inside ConfigureApplicationCookie so the
+		// store can come from DI; the cookie options themselves are built once at startup.
+		services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
+			.Configure<ITicketStore>((options, store) => options.SessionStore = store);
+
+		// What makes a deliberate "sign out everywhere" (and a password change) reach sessions
+		// other than the one signing out. The ticket store handles the current session
+		// immediately, so this only bounds the delay for the rest.
+		services.Configure<SecurityStampValidatorOptions>(options =>
+			options.ValidationInterval = TimeSpan.FromMinutes(
+				Math.Max(0, configuration.GetValue(
+					$"{Security.ServerSessionOptions.SectionName}:SecurityStampValidationMinutes", 5))));
+
 		// See CookieHardening for why this is conditional rather than always strict.
 		var cookiePolicy = Security.CookieHardening.ForEnvironment(environment);
 
@@ -135,6 +182,11 @@ public static class InfrastructureServiceExtensions
 		// — which do not set Secure. The token it protects is only useful to an attacker who
 		// can also read it, and a cookie without Secure is readable by anyone who can
 		// downgrade a single request to plain HTTP.
+		// Backs the per-device-code polling pace (RFC 8628 slow_down).
+		services.AddMemoryCache();
+		services.Configure<Security.DevicePollingOptions>(
+			configuration.GetSection(Security.DevicePollingOptions.SectionName));
+
 		services.AddAntiforgery(options =>
 		{
 			options.Cookie.Name = cookiePolicy.Name("Antiforgery");

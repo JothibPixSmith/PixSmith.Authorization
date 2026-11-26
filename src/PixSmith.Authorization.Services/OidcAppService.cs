@@ -46,6 +46,9 @@ public sealed class OidcAppService(
             if (await manager.FindByClientIdAsync(request.ClientId, ct) is not null)
                 return Result<OidcAppDto>.Failure($"An application with client ID '{request.ClientId}' already exists.");
 
+            var grants = CheckGrantTypes(request.GrantTypes);
+            if (!grants.IsSuccess) return Result<OidcAppDto>.Failure(grants.Error!);
+
             var exemption = CheckPkceExemption(request.PkceExempt, request.ClientType, request.GrantTypes);
             if (!exemption.IsSuccess) return Result<OidcAppDto>.Failure(exemption.Error!);
 
@@ -96,6 +99,9 @@ public sealed class OidcAppService(
 
             // Not "keep what is there": an update that omits the flag puts PKCE back. Losing an
             // exemption by accident is safe; keeping one by accident is not.
+            var grants = CheckGrantTypes(request.GrantTypes);
+            if (!grants.IsSuccess) return Result.Failure(grants.Error!);
+
             var exemption = CheckPkceExemption(request.PkceExempt, existing, request.GrantTypes);
             if (!exemption.IsSuccess) return Result.Failure(exemption.Error!);
 
@@ -125,6 +131,35 @@ public sealed class OidcAppService(
         {
             return Result.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Refuses grant types the server does not support.
+    ///
+    /// <para>
+    /// The password grant in particular: the server removed it server-wide, but an admin could
+    /// still create a client carrying <c>gt:password</c>. That client would look configured and
+    /// do nothing — and would quietly start working if the grant were ever re-enabled, which is
+    /// the opposite of what removing it was for. Refusing it here says so plainly instead of
+    /// silently dropping the permission.
+    /// </para>
+    /// </summary>
+    private static Result CheckGrantTypes(List<string> grantTypes)
+    {
+        var password = grantTypes.FirstOrDefault(g =>
+            g is "password" or "urn:ietf:params:oauth:grant-type:password");
+
+        if (password is not null)
+        {
+            return Result.Failure(
+                "The resource owner password credentials grant is not supported by this server. " +
+                "Use authorization_code with PKCE for interactive clients, client_credentials " +
+                "for machine-to-machine callers, or the device authorization grant " +
+                "(urn:ietf:params:oauth:grant-type:device_code) for a device or CLI that needs " +
+                "a user's token.");
+        }
+
+        return Result.Success();
     }
 
     /// <summary>
@@ -299,6 +334,13 @@ public sealed class OidcAppService(
         return Result.Success();
     }
 
+    /// <summary>
+    /// Matches the device authorization grant by either its RFC 8628 URN or the short
+    /// "device_code" alias.
+    /// </summary>
+    private static bool IsDeviceCodeGrant(string grant) =>
+        grant is "device_code" or "urn:ietf:params:oauth:grant-type:device_code";
+
     private static OpenIddictApplicationDescriptor BuildDescriptor(
         string clientId, string? clientSecret, string? displayName, string clientType,
         List<string> redirectUris, List<string> postLogoutUris,
@@ -314,8 +356,16 @@ public sealed class OidcAppService(
 
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Token);
 
-        if (grantTypes.Contains("authorization_code") || grantTypes.Contains("password"))
+        if (grantTypes.Contains("authorization_code"))
             descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Authorization);
+
+        // ── CR-1 ────────────────────────────────────────────────────────────
+        // The device grant needs the device authorization endpoint as well as the grant
+        // itself. Without this a client created through the admin API carries gt:…device_code
+        // but is refused at /connect/deviceauthorization, so only the seeded provisioning-cli
+        // ever worked.
+        if (grantTypes.Any(IsDeviceCodeGrant))
+            descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.DeviceAuthorization);
 
         if (redirectUris.Count > 0 || grantTypes.Contains("authorization_code"))
             descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.EndSession);
@@ -326,8 +376,12 @@ public sealed class OidcAppService(
             {
                 "authorization_code" => OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
                 "client_credentials" => OpenIddictConstants.Permissions.GrantTypes.ClientCredentials,
-                "password" => OpenIddictConstants.Permissions.GrantTypes.Password,
                 "refresh_token" => OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                // Accepts the short alias as well as the URN, since the URN is awkward to type
+                // and a caller sending "device_code" would otherwise get a permission the
+                // server never matches.
+                _ when IsDeviceCodeGrant(grant)
+                    => OpenIddictConstants.Permissions.GrantTypes.DeviceCode,
                 _ => OpenIddictConstants.Permissions.Prefixes.GrantType + grant,
             });
         }

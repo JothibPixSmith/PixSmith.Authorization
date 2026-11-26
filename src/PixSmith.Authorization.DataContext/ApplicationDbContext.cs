@@ -19,6 +19,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<EmailOutboxMessage> EmailOutboxMessages => Set<EmailOutboxMessage>();
     public DbSet<ProvisioningNonce> ProvisioningNonces => Set<ProvisioningNonce>();
 
+    /// <summary>
+    /// Server-side authentication sessions. Without these the cookie *is* the session, so
+    /// signing out only deletes the browser's copy and a captured cookie keeps working until
+    /// it expires. See EfTicketStore.
+    /// </summary>
+    public DbSet<AuthenticationTicketRecord> AuthenticationTickets => Set<AuthenticationTicketRecord>();
+
     // Multi-tenancy (docs/MULTI-TENANCY.md). Present but not yet read by the
     // authorization path — see that document's staging table.
     public DbSet<TenantMembershipRecord> TenantMemberships => Set<TenantMembershipRecord>();
@@ -160,6 +167,17 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        builder.Entity<AuthenticationTicketRecord>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Value).IsRequired();
+            // Expiry is swept by AuthenticationTicketCleanup, and every lookup filters on it.
+            e.HasIndex(x => x.ExpiresAt);
+            // "Sign out everywhere" and any audit of live sessions start from the user.
+            e.HasIndex(x => x.UserId);
+        });
+
         // Apply OpenIddict entity configurations
         builder.UseOpenIddict<Guid>();
     }
@@ -229,6 +247,27 @@ public class ProvisioningNonce
     /// <summary>The human operator who submitted the request.</summary>
     public Guid? UserId { get; set; }
     public DateTimeOffset UsedAt { get; set; }
+}
+
+/// <summary>
+/// One server-side authentication session. The cookie carries only <see cref="Id"/>, so
+/// deleting this row revokes the session immediately — which is what makes logout take effect
+/// on the server rather than only in the browser.
+/// </summary>
+public class AuthenticationTicketRecord
+{
+    /// <summary>Opaque session key; the only thing the cookie contains.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>The serialized ticket, as the cookie payload would otherwise have held.</summary>
+    public byte[] Value { get; set; } = [];
+
+    /// <summary>Null when the ticket carries no resolvable subject.</summary>
+    public Guid? UserId { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset LastAccessedAt { get; set; }
 }
 
 /// <summary>A person's membership of a company. See docs/MULTI-TENANCY.md.</summary>

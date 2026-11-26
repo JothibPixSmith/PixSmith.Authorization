@@ -1,0 +1,52 @@
+@model LogoutModel
+@{
+    ViewData["Title"] = "Sign out";
+}
+
+<div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 w-full max-w-sm space-y-6">
+
+    <div class="text-center space-y-1">
+        <div class="text-4xl">👋</div>
+        <h1 class="text-2xl font-bold text-gray-800">Sign out?</h1>
+        <p class="text-sm text-gray-500">
+            This ends your session for every application you signed in to here.
+        </p>
+    </div>
+
+    @if (Model.ClientId is not null)
+    {
+        <div class="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700">
+            <span class="font-medium">Requested by:</span> @Model.ClientId
+        </div>
+    }
+
+    @* The original parameters travel with the confirmation so the relying party's
+       post_logout_redirect_uri and state still apply after the POST. *@
+    @* @Html.AntiForgeryToken() explicitly: the form tag helper only injects it automatically
+       for forms it generates the action for. With a literal action attribute it does not, and
+       the POST would then be refused with a 400 — correctly, but confusingly. *@
+    <form method="post" action="/connect/logout" class="space-y-4">
+        @Html.AntiForgeryToken()
+        @if (!string.IsNullOrEmpty(Model.PostLogoutRedirectUri))
+        {
+            <input type="hidden" name="post_logout_redirect_uri" value="@Model.PostLogoutRedirectUri" />
+        }
+        @if (!string.IsNullOrEmpty(Model.State))
+        {
+            <input type="hidden" name="state" value="@Model.State" />
+        }
+        @if (!string.IsNullOrEmpty(Model.ClientId))
+        {
+            <input type="hidden" name="client_id" value="@Model.ClientId" />
+        }
+
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition">
+            Yes, sign me out
+        </button>
+    </form>
+
+    <p class="text-center text-sm text-gray-500">
+        <a href="/" class="text-blue-600 hover:underline">Stay signed in</a>
+    </p>
+</div>

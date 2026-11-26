@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 using PixSmith.Authorization.DataContext;
+using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Domain.Entities;
 using PixSmith.Authorization.Repositories.Interfaces;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -48,7 +49,11 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     public const string KeyAId = "test-key-a";
     public const string KeyBId = "test-key-b";
 
-    public SecurityWebApplicationFactory() => _connection.Open();
+    public SecurityWebApplicationFactory()
+    {
+        TestSecrets.Ensure();
+        _connection.Open();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -203,6 +208,40 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             descriptor.Permissions.Add(Permissions.Prefixes.Scope + s);
 
         await apps.CreateAsync(descriptor);
+    }
+
+    /// <summary>
+    /// Creates a client through <c>IOidcAppService</c> — the same path the admin API uses —
+    /// so its validation is exercised. <c>RegisterClientAsync</c> goes straight to the
+    /// OpenIddict manager and deliberately bypasses it.
+    /// </summary>
+    public async Task<(bool Succeeded, string Error)> CreateOidcAppAsync(
+        string clientId, string[] grantTypes, string[] scopes, bool confidential = false)
+    {
+        using var scope = Services.CreateScope();
+        var apps = scope.ServiceProvider
+            .GetRequiredService<Services.Interfaces.IOidcAppService>();
+
+        var result = await apps.CreateAsync(new DataContext.CreateOidcAppRequest(
+            ClientId: clientId,
+            ClientSecret: confidential ? "secret-for-tests" : null,
+            DisplayName: clientId,
+            ClientType: confidential ? ClientTypes.Confidential : ClientTypes.Public,
+            RedirectUris: [],
+            PostLogoutRedirectUris: [],
+            Scopes: [.. scopes],
+            GrantTypes: [.. grantTypes],
+            PkceExempt: false));
+
+        return (result.IsSuccess, result.Error ?? string.Empty);
+    }
+
+    /// <summary>Null when no client with that id exists.</summary>
+    public async Task<object?> FindClientAsync(string clientId)
+    {
+        using var scope = Services.CreateScope();
+        var apps = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        return await apps.FindByClientIdAsync(clientId);
     }
 
     public const string RedirectBase = "https://test.local/callback";

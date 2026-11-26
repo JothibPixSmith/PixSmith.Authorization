@@ -242,7 +242,53 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 	[HttpGet("~/connect/logout")]
 	public async Task<IActionResult> Logout()
 	{
+		var request = HttpContext.GetOpenIddictServerRequest()
+			?? throw new InvalidOperationException("OpenIddict request not found.");
+
+		// A valid id_token_hint means the relying party named the session it wants ended, so
+		// honour it without interrupting the user.
+		//
+		// Without one, this is just a URL. Any site can navigate a signed-in user's browser
+		// to it and end their SSO session — logging them out of every application at once.
+		// That is a nuisance rather than a breach, but it is still an unauthenticated state
+		// change driven from another origin, so it gets confirmed.
+		// Both halves matter. AuthenticateAsync succeeds trivially when the request carried no
+		// hint at all, so presence is checked first; the authenticate call then decides whether
+		// the hint that *was* sent is actually valid.
+		var hinted = !string.IsNullOrEmpty(request.IdTokenHint);
+
+		var hint = hinted
+			? await HttpContext.AuthenticateAsync(
+				OpenIddictServerAspNetCoreDefaults.AuthenticationScheme)
+			: null;
+
+		if (!hinted || hint?.Succeeded != true || hint.Principal is null)
+		{
+			return View("Logout", new LogoutModel
+			{
+				ClientId = request.ClientId,
+				PostLogoutRedirectUri = request.PostLogoutRedirectUri,
+				State = request.State,
+			});
+		}
+
+		return await SignOutEverywhereAsync();
+	}
+
+	/// <summary>
+	/// The confirmed leg. Reached from the page above, or directly by a relying party that
+	/// prefers POST — the end-session endpoint accepts both.
+	/// </summary>
+	[HttpPost("~/connect/logout")]
+	[ValidateAntiForgeryToken]
+	public Task<IActionResult> LogoutPost() => SignOutEverywhereAsync();
+
+	private async Task<IActionResult> SignOutEverywhereAsync()
+	{
 		await connectService.SignOutAsync();
+
+		// RedirectUri is only a fallback: when the request carried a valid
+		// post_logout_redirect_uri, OpenIddict redirects there instead.
 		return SignOut(
 			authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
 			properties: new AuthenticationProperties { RedirectUri = "/" });

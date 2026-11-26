@@ -103,6 +103,53 @@ it at `/connect/verify`, and the script polls `/connect/token`. Nothing but the 
 page ever receives a password. Integration tests drive the real redirect flow through
 `SecurityWebApplicationFactory.GetUserTokenAsync`.
 
+**Device clients must be created through the admin API, which grants both permissions.**
+`OidcAppService` adds the device authorization *endpoint* permission alongside the grant — a
+client with only `gt:…device_code` is refused at `/connect/deviceauthorization`. It accepts the
+short `device_code` alias as well as the RFC 8628 URN. `RegisterClientAsync` in the test factory
+talks to the OpenIddict manager directly and deliberately bypasses this, so cover for that code
+path has to go through `CreateOidcAppAsync`.
+
+**The password grant cannot be configured, either.** `OidcAppService` refuses it with an
+explanatory error rather than silently dropping the permission: a client carrying `gt:password`
+would look configured, do nothing, and quietly start working if the grant were ever re-enabled.
+
+**Device-code polling is paced per device code.** `DevicePollingThrottle` answers polls that
+arrive inside the interval with `slow_down` (RFC 8628 §3.5), widening that code's required
+interval by 5s each time. It is middleware, not controller code, because OpenIddict answers
+`authorization_pending` from its own pipeline while a code is pending — `ConnectController` never
+sees those polls. Settings live under `DevicePolling:*`.
+
+**Sessions live on the server, not in the cookie.** `EfTicketStore` (an `ITicketStore` backed
+by the `AuthenticationTickets` table) means the cookie carries only an opaque key, so logout
+revokes the session rather than just deleting the browser's copy — a cookie captured beforehand
+stops working immediately.
+
+**The Identity cookie is deliberately *not* the default authenticate scheme.** `AddIdentity`
+makes it so, which had `UseAuthentication` reading the cookie — and therefore querying the
+session store — on every request that reached the middleware. Because the admin UI is
+same-origin the browser attaches that cookie to every `/api/*` call too, none of which use it:
+those endpoints authorize with the bearer scheme. The default is pointed at the token validation
+scheme instead, measured as one fewer database round-trip per such request. Nothing may rely on
+the default: every `[Authorize]` names its scheme (or uses a policy that does), and anything
+needing the cookie calls `AuthenticateAsync(IdentityConstants.ApplicationScheme)` explicitly —
+`LoginController.LogoutEverywhere` is the one that learned this the hard way, since reading
+`User` there would have revoked nothing, silently. The *challenge* scheme is left alone so a
+challenge still redirects to the login page.
+
+Do not put a memory cache in front of the ticket store without thinking it through: on more than
+one instance, logout on one node leaves a replayed cookie working on another until its entry
+expires, which is exactly the window the server-side session exists to close. `AuthenticationTicketCleanup` sweeps expired rows, and
+`POST /Account/LogoutEverywhere` deletes every session for the user *and* rotates the security
+stamp. `Sessions:*` configures the sweep interval and the stamp revalidation window.
+
+**Logout without a valid `id_token_hint` is confirmed, not silent.** `/connect/logout` is just a
+URL: any site could navigate a signed-in user's browser to it and end their SSO session
+everywhere. With a valid hint the relying party has named the session and it is honoured
+immediately; without one the user gets a no-JavaScript confirmation page that POSTs back with an
+antiforgery token. That form needs an explicit `@Html.AntiForgeryToken()` — the form tag helper
+does not inject one when the form carries a literal `action` attribute.
+
 **Administering the server needs both the `Admin` role and the `admin` scope.** Neither alone: the role without the scope lets any token an administrator holds administer, the scope without the role lets a machine client administer with no human involved.
 
 **Creating a tenancy requires offline signatures.** Mutating tenant endpoints demand an interactive human administrator plus a quorum of detached ECDSA signatures from keys held off the server. It fails closed when no keys are configured. See `docs/TENANT-PROVISIONING.md`.

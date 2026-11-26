@@ -94,6 +94,10 @@ app.UseSerilogRequestLogging();
 app.UseRouting();
 app.UseRateLimiter();
 
+// Before the endpoint: while a device code is pending OpenIddict answers
+// authorization_pending from its own pipeline, so ConnectController never sees these polls.
+app.UseMiddleware<DevicePollingThrottle>();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
