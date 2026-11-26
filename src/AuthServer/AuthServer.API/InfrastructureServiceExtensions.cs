@@ -127,6 +127,11 @@ public static class InfrastructureServiceExtensions
 		services.AddSingleton<ITicketStore>(sp => sp.GetRequiredService<Security.EfTicketStore>());
 		services.AddHostedService<Security.AuthenticationTicketCleanup>();
 
+		// The cookie is only one of three credentials a signed-in user holds. Revoking the
+		// OAuth ones is what stops "sign out everywhere" leaving a refresh token alive — see
+		// TokenRevocation. Scoped, because the OpenIddict managers it uses are.
+		services.AddScoped<Security.TokenRevocation>();
+
 		// Set through the options pipeline rather than inside ConfigureApplicationCookie so the
 		// store can come from DI; the cookie options themselves are built once at startup.
 		services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)

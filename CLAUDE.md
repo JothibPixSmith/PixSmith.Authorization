@@ -143,6 +143,24 @@ expires, which is exactly the window the server-side session exists to close. `A
 `POST /Account/LogoutEverywhere` deletes every session for the user *and* rotates the security
 stamp. `Sessions:*` configures the sweep interval and the stamp revalidation window.
 
+**Signing out everywhere revokes tokens, not just sessions.** A signed-in user holds three
+credentials and the cookie is only one. `TokenRevocation` marks every token entry and
+authorization for that subject revoked, which is what stops a refresh token outliving the
+logout — refresh tokens are checked against storage when redeemed, so this bites at the next
+attempt and costs nothing per request. Authorizations are revoked *before* tokens on purpose: a
+refresh already in flight validates both, so a request that slips past the token sweep is still
+refused. An ordinary `/Account/Logout` deliberately does **not** revoke — ending one browser
+session is not a statement about the applications the user authorized — and there is a test
+pinning that down.
+
+What remains open is an access token already issued: it is a signed JWT validated against the
+key, with no entry consulted, so it stays good until it expires (an hour; the OpenIddict
+default, nothing overrides it). Closing that window too means `EnableTokenEntryValidation`,
+which buys immediate revocation at one database read per API request — the exact cost that
+pointing the default authenticate scheme at the token validation handler removed. Shortening the
+access-token lifetime is the cheaper lever, at the price of more refreshes, and refreshes are the
+expensive requests.
+
 **Logout without a valid `id_token_hint` is confirmed, not silent.** `/connect/logout` is just a
 URL: any site could navigate a signed-in user's browser to it and end their SSO session
 everywhere. With a valid hint the relying party has named the session and it is honoured

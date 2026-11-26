@@ -321,6 +321,18 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     }
 
     public async Task<string> GetUserTokenAsync(
+        string clientId, string email, string scope, string? organization = null) =>
+        (await GetUserTokensAsync(clientId, email, scope, organization)).AccessToken!;
+
+    /// <summary>Both tokens from one exchange, for the tests that need the refresh token.</summary>
+    public sealed record TokenPair(string? AccessToken, string? RefreshToken);
+
+    /// <summary>
+    /// The full exchange. <see cref="GetUserTokenAsync"/> is the common case; this exists
+    /// because revocation can only be observed through the refresh token — an access token is
+    /// a self-contained JWT and keeps validating until it expires either way.
+    /// </summary>
+    public async Task<TokenPair> GetUserTokensAsync(
         string clientId, string email, string scope, string? organization = null)
     {
         await EnsureRedirectUriAsync(clientId);
@@ -419,7 +431,9 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
         if (!token.IsSuccessStatusCode)
             throw new InvalidOperationException($"token exchange failed: {body}");
 
-        return body.GetProperty("access_token").GetString()!;
+        return new TokenPair(
+            body.GetProperty("access_token").GetString(),
+            body.TryGetProperty("refresh_token", out var refresh) ? refresh.GetString() : null);
     }
 
     protected override void Dispose(bool disposing)

@@ -20,7 +20,7 @@ namespace PixSmith.Authorization.API.Controllers;
 ///
 /// <para>
 /// This is deliberately separate from <c>AccountController</c>, which is a JSON API consumed by
-/// the Blazor admin UI over the password grant and never establishes a cookie session.
+/// the Blazor admin UI with a bearer token and never establishes a cookie session.
 /// </para>
 /// </summary>
 [ApiExplorerSettings(IgnoreApi = true)]
@@ -30,6 +30,7 @@ public sealed class LoginController(
 	UserManager<IdentityUser<Guid>> userManager,
 	ITenantRepository tenants,
 	Security.EfTicketStore ticketStore,
+	Security.TokenRevocation revocation,
 	ILogger<LoginController> logger) : Controller
 {
 	[HttpGet("~/Account/Login")]
@@ -112,10 +113,18 @@ public sealed class LoginController(
 	/// me" action.
 	///
 	/// <para>
-	/// Does both halves deliberately. Deleting the tickets revokes existing sessions at once;
-	/// rotating the security stamp invalidates any cookie still in flight and stops a captured
-	/// one being reused, which deleting the rows alone cannot guarantee for a session created
-	/// in the same instant.
+	/// Three credentials, all of them deliberate. Deleting the tickets revokes existing
+	/// sessions at once; rotating the security stamp invalidates any cookie still in flight and
+	/// stops a captured one being reused, which deleting the rows alone cannot guarantee for a
+	/// session created in the same instant; and revoking the OAuth tokens is what keeps a
+	/// refresh token from outliving the logout entirely.
+	/// </para>
+	///
+	/// <para>
+	/// One window remains and cannot be closed here: an access token already issued is a signed
+	/// JWT validated against the key, so it stays good until it expires (an hour by default).
+	/// Closing that too means validating token entries on every API request — a database read
+	/// per call. See TokenRevocation.
 	/// </para>
 	/// </summary>
 	[HttpPost("~/Account/LogoutEverywhere")]
@@ -135,9 +144,15 @@ public sealed class LoginController(
 			var revoked = await ticketStore.RemoveAllForUserAsync(user.Id);
 			await userManager.UpdateSecurityStampAsync(user);
 
+			// Tokens as well as sessions. Refresh tokens are checked against storage when they
+			// are redeemed, so this takes effect on the next attempt rather than at expiry.
+			var credentials = await revocation.RevokeAllForUserAsync(
+				user.Id, HttpContext.RequestAborted);
+
 			logger.LogInformation(
-				"User {UserId} signed out everywhere; {Count} session(s) revoked.",
-				user.Id, revoked);
+				"User {UserId} signed out everywhere; {Sessions} session(s), {Tokens} token(s) "
+				+ "and {Authorizations} authorization(s) revoked.",
+				user.Id, revoked, credentials.Tokens, credentials.Authorizations);
 		}
 
 		await signInManager.SignOutAsync();

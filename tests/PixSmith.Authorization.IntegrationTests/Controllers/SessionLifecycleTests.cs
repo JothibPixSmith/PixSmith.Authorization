@@ -1,6 +1,8 @@
 using System.Net;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenIddict.Abstractions;
 using PixSmith.Authorization.DataContext;
 using Xunit;
 
@@ -9,6 +11,12 @@ namespace PixSmith.Authorization.IntegrationTests.Controllers;
 /// <summary>
 /// CR-4 and CR-5: logout must end the session on the server, and a logout request without a
 /// valid <c>id_token_hint</c> must be confirmed rather than acted on silently.
+///
+/// <para>
+/// Plus the follow-on: "sign out everywhere" must revoke the user's OAuth credentials too. A
+/// session is only one of three things a signed-in user holds, and the refresh token was the
+/// one that survived the logout indefinitely.
+/// </para>
 /// </summary>
 public sealed class SessionLifecycleTests : IAsyncLifetime
 {
@@ -210,5 +218,140 @@ public sealed class SessionLifecycleTests : IAsyncLifetime
 
         Assert.NotEqual(HttpStatusCode.Found, response.StatusCode);
         Assert.Equal(before, await SessionCountAsync());
+    }
+
+    // ── Token revocation on "sign out everywhere" ────────────────────────────
+
+    private const string OfflineScope = "openid profile email roles api offline_access";
+
+    private async Task<Guid> AdminIdAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var users = scope.ServiceProvider
+            .GetRequiredService<UserManager<IdentityUser<Guid>>>();
+
+        var user = await users.FindByEmailAsync(SecurityWebApplicationFactory.AdminEmail);
+        return user!.Id;
+    }
+
+    /// <summary>How many of this user's token entries are still usable.</summary>
+    private async Task<int> ValidTokenCountAsync(Guid userId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var tokens = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+
+        var valid = 0;
+        await foreach (var token in tokens.FindBySubjectAsync(userId.ToString()))
+        {
+            if (await tokens.GetStatusAsync(token) == OpenIddictConstants.Statuses.Valid)
+                valid++;
+        }
+
+        return valid;
+    }
+
+    private Task<HttpResponseMessage> RefreshAsync(string refreshToken)
+    {
+        var client = _factory.CreateApiClient();
+
+        return client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "refresh_token"),
+            new("client_id", "blazor-client"),
+            new("refresh_token", refreshToken),
+        ]));
+    }
+
+    /// <summary>Signs in a second browser and posts the sign-out-everywhere form.</summary>
+    private async Task SignOutEverywhereAsync()
+    {
+        var (client, _) = await SignInAsync();
+
+        var page = await client.GetAsync("/Account/Login");
+        var token = Antiforgery(await page.Content.ReadAsStringAsync());
+
+        var response = await client.PostAsync("/Account/LogoutEverywhere",
+            new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("__RequestVerificationToken", token),
+            ]));
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_refresh_token_is_usable_while_the_user_is_signed_in()
+    {
+        // The control. Without this the revocation tests below would pass just as well if
+        // refresh were broken outright.
+        var tokens = await _factory.GetUserTokensAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail, OfflineScope);
+
+        Assert.NotNull(tokens.RefreshToken);
+
+        var refreshed = await RefreshAsync(tokens.RefreshToken!);
+
+        Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+    }
+
+    [Fact]
+    public async Task Signing_out_everywhere_revokes_the_refresh_token()
+    {
+        // The window this closes: the cookie session ended, but the refresh token did not, so
+        // a holder could mint a brand-new access token afterwards and keep doing so for the
+        // refresh token's whole lifetime — fourteen days by default.
+        var tokens = await _factory.GetUserTokensAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail, OfflineScope);
+
+        Assert.NotNull(tokens.RefreshToken);
+
+        await SignOutEverywhereAsync();
+
+        var refreshed = await RefreshAsync(tokens.RefreshToken!);
+
+        Assert.Equal(HttpStatusCode.BadRequest, refreshed.StatusCode);
+
+        var body = await refreshed.Content.ReadAsStringAsync();
+        Assert.Contains("invalid_grant", body);
+    }
+
+    [Fact]
+    public async Task Signing_out_everywhere_leaves_no_valid_token_entry()
+    {
+        // Covers the rest of what a subject can hold — authorization codes, device codes and
+        // access-token entries — not just the refresh token the test above redeems.
+        await _factory.GetUserTokensAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail, OfflineScope);
+
+        var userId = await AdminIdAsync();
+        Assert.True(await ValidTokenCountAsync(userId) > 0, "no tokens were issued to revoke");
+
+        await SignOutEverywhereAsync();
+
+        Assert.Equal(0, await ValidTokenCountAsync(userId));
+    }
+
+    [Fact]
+    public async Task An_ordinary_logout_leaves_tokens_alone()
+    {
+        // Deliberate, and worth pinning down. Ending one browser session is not a statement
+        // about the applications the user has authorized; revoking their tokens from under
+        // them would sign them out of every client as a side effect of closing one session.
+        // "Sign out everywhere" is the action that means that, and it is the one that revokes.
+        await _factory.GetUserTokensAsync(
+            "blazor-client", SecurityWebApplicationFactory.AdminEmail, OfflineScope);
+
+        var userId = await AdminIdAsync();
+        var before = await ValidTokenCountAsync(userId);
+
+        var (client, _) = await SignInAsync();
+        var page = await client.GetAsync("/Account/Login");
+        var token = Antiforgery(await page.Content.ReadAsStringAsync());
+        await client.PostAsync("/Account/Logout", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("__RequestVerificationToken", token),
+        ]));
+
+        Assert.Equal(before, await ValidTokenCountAsync(userId));
     }
 }
