@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
@@ -38,6 +38,23 @@ public sealed class AdminUserSeeder(
             ? u
             : email.Split('@')[0];
 
+        // Checked before anything is written. AccountService.RegisterAsync creates the domain
+        // half first and the IdentityUser second, so a password the policy refuses fails
+        // half-way: the seed throws, as it should, but leaves a UserProfile row behind with no
+        // account attached. Validating here means a bad AdminSeed:Password is refused clean,
+        // and the message names the reason rather than making the operator infer it.
+        var candidate = new IdentityUser<Guid> { UserName = username, Email = email };
+        foreach (var validator in userManager.PasswordValidators)
+        {
+            var policy = await validator.ValidateAsync(userManager, candidate, password);
+            if (policy.Succeeded) continue;
+
+            throw new InvalidOperationException(
+                $"AdminSeed:Password for {email} is refused by the Identity password policy: " +
+                string.Join("; ", policy.Errors.Select(e => e.Description)) +
+                " Fix AdminSeed:Password and restart. Nothing was written.");
+        }
+
         // IUserService.RegisterAsync only creates the UserProfile — the IdentityUser row
         // (which AssignRoleAsync depends on) is created by IAccountService.RegisterAsync
         // via UserManager. Calling IUserService directly leaves a profile with no matching
@@ -53,7 +70,9 @@ public sealed class AdminUserSeeder(
             throw new InvalidOperationException(
                 $"Admin seed failed for {email}: {result.Error}. " +
                 "AdminSeed:Password must satisfy the Identity password policy " +
-                "(8+ characters, an uppercase letter, a digit, and a special character). " +
+                "(12+ characters, and not one of the breached passwords in " +
+                "CommonPasswordValidator's list; no digit, uppercase letter or symbol is " +
+                "required). " +
                 "Fix AdminSeed:Email/Username/Password and restart.");
         }
 

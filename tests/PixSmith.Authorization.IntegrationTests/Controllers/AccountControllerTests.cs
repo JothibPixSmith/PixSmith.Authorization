@@ -19,8 +19,8 @@ public sealed class AccountControllerTests : IClassFixture<AuthWebApplicationFac
         var request = new RegisterUserRequest(
             Username: $"user_{Guid.NewGuid():N}",
             Email: $"{Guid.NewGuid():N}@example.com",
-            Password: "P@ssw0rd123",
-            ConfirmPassword: "P@ssw0rd123",
+            Password: "P@ssw0rd1234",
+            ConfirmPassword: "P@ssw0rd1234",
             FirstName: "Test",
             LastName: "User");
 
@@ -45,8 +45,8 @@ public sealed class AccountControllerTests : IClassFixture<AuthWebApplicationFac
         var request = new RegisterUserRequest(
             Username: $"user_{Guid.NewGuid():N}",
             Email: $"{Guid.NewGuid():N}@example.com",
-            Password: "P@ssw0rd123",
-            ConfirmPassword: "P@ssw0rd123",
+            Password: "P@ssw0rd1234",
+            ConfirmPassword: "P@ssw0rd1234",
             FirstName: "Test",
             LastName: "User");
 
@@ -63,8 +63,8 @@ public sealed class AccountControllerTests : IClassFixture<AuthWebApplicationFac
         var fresh = await client.PostAsJsonAsync("/api/account/register", new RegisterUserRequest(
             Username: $"user_{Guid.NewGuid():N}",
             Email: $"{Guid.NewGuid():N}@example.com",
-            Password: "P@ssw0rd123",
-            ConfirmPassword: "P@ssw0rd123",
+            Password: "P@ssw0rd1234",
+            ConfirmPassword: "P@ssw0rd1234",
             FirstName: "Test",
             LastName: "User"));
 

@@ -52,10 +52,12 @@ dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "..."
 dotnet user-secrets list        # confirm what is set
 ```
 
-The admin password must satisfy the Identity policy — 8+ characters with an uppercase letter, a
-digit, and a special character. A password that does not is not a silent failure: startup throws
-with an explicit message naming the policy, because an instance seeded with an unusable admin
-would otherwise have no way to log in.
+The admin password must satisfy the Identity policy — 12+ characters, and not one of the 19,179
+passwords known from credential breaches. There is no requirement for a digit, an uppercase
+letter or a symbol: those rules refused long passphrases while accepting `Password1!`, so the
+breached-password list does that job instead (`Identity:Password:*`). A password that does not
+satisfy the policy is not a silent failure: startup throws with an explicit message naming it,
+because an instance seeded with an unusable admin would otherwise have no way to log in.
 
 Defaults for everything else live in `appsettings.json` and work as-is for local development
 (SQLite at `auth.db`). To point at Postgres instead, override two settings in

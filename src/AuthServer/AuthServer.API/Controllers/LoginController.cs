@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using PixSmith.Authorization.API.Models;
 using PixSmith.Authorization.Repositories.Interfaces;
+using PixSmith.Authorization.Services.Interfaces;
 
 namespace PixSmith.Authorization.API.Controllers;
 
@@ -31,8 +32,20 @@ public sealed class LoginController(
 	ITenantRepository tenants,
 	Security.EfTicketStore ticketStore,
 	Security.TokenRevocation revocation,
+	Security.DummyPasswordVerifier dummyPassword,
+	IEmailService emails,
+	IConfiguration configuration,
+	TimeProvider clock,
 	ILogger<LoginController> logger) : Controller
 {
+	/// <summary>
+	/// The only thing a failed sign-in ever says. One wording for "no such account", "wrong
+	/// password" and "locked out": each of the others would tell an attacker which addresses
+	/// are worth attacking, and the first two have to match for the lockout wording to be
+	/// worth anything at all.
+	/// </summary>
+	private const string GenericFailure = "Invalid email or password.";
+
 	[HttpGet("~/Account/Login")]
 	public async Task<IActionResult> Index(string? returnUrl = null)
 	{
@@ -62,10 +75,20 @@ public sealed class LoginController(
 
 		if (user is null)
 		{
-			// Same message as a bad password so the form does not disclose which emails exist.
-			ModelState.AddModelError(string.Empty, "Invalid email or password.");
+			// Verify the password against a throwaway hash before answering. Returning here
+			// without hashing anything made an unknown address answer in about 4 ms against a
+			// real account's 72 ms, which enumerates accounts just as well as a different
+			// message does. See DummyPasswordVerifier.
+			dummyPassword.Verify(model.Password);
+
+			ModelState.AddModelError(string.Empty, GenericFailure);
 			return View(model);
 		}
+
+		// Read before the attempt. Identity answers LockedOut both for the attempt that trips
+		// the lock and for every attempt afterwards, so comparing before with after is the only
+		// way to notify the owner once rather than on every retry.
+		var wasLockedOut = await userManager.GetLockoutEndDateAsync(user) > clock.GetUtcNow();
 
 		var result = await signInManager.PasswordSignInAsync(
 			user, model.Password, model.RememberMe, lockoutOnFailure: true);
@@ -85,12 +108,44 @@ public sealed class LoginController(
 			return View(model);
 		}
 
-		ModelState.AddModelError(string.Empty, result switch
+		if (result.IsLockedOut)
 		{
-			{ IsLockedOut: true }  => "This account is locked out. Try again later.",
-			{ IsNotAllowed: true } => "Please confirm your email address before signing in.",
-			_                      => "Invalid email or password.",
-		});
+			if (wasLockedOut)
+			{
+				// Identity refuses an account that is already locked before it verifies
+				// anything, so this answer would come back in milliseconds against the 70-odd
+				// a wrong password costs — the oracle the shared wording is there to close.
+				dummyPassword.Verify(model.Password);
+			}
+			else
+			{
+				// The attempt that tripped the lock. It verified a real password on the way,
+				// so it has already paid; what it owes is the notice to the account's owner.
+				await NotifyLockedOutAsync(user);
+			}
+		}
+
+		if (result.IsNotAllowed)
+		{
+			if (!user.EmailConfirmed)
+			{
+				// Verifies the password itself, and sends a fresh link if it was right.
+				await ReconfirmEmailAsync(user, model.Password);
+			}
+			else
+			{
+				// Some other CanSignInAsync rule — a confirmed phone number, say. None is
+				// configured today, so this is unreachable; it is here because the invariant
+				// is that every way out of this form verifies a password exactly once, and
+				// the next rule somebody enables should not quietly break it.
+				dummyPassword.Verify(model.Password);
+			}
+		}
+
+		// One wording, for every way this can fail: no such account, a wrong password, a
+		// locked-out account, and an address that was never confirmed. Each of the others gets
+		// told what it needs by email instead.
+		ModelState.AddModelError(string.Empty, GenericFailure);
 
 		return View(model);
 	}
@@ -161,6 +216,97 @@ public sealed class LoginController(
 
 	[HttpGet("~/Account/AccessDenied")]
 	public IActionResult AccessDenied() => View();
+
+	/// <summary>
+	/// Tells the account's owner that it has been locked, since the page no longer can.
+	///
+	/// <para>
+	/// Sent once, on the attempt that trips the lock, and only to the address on the account —
+	/// so it reaches whoever owns it and nobody who is guessing at it. Enqueued through the
+	/// outbox like every other message; a failure here is logged and swallowed, because a
+	/// mail problem must not turn a refused sign-in into a 500.
+	/// </para>
+	/// </summary>
+	private async Task NotifyLockedOutAsync(IdentityUser<Guid> user)
+	{
+		if (user.Email is null or { Length: 0 }) return;
+
+		var lockoutEnd = await userManager.GetLockoutEndDateAsync(user) ?? clock.GetUtcNow();
+
+		try
+		{
+			await emails.SendAccountLockedAsync(
+				user.Email, lockoutEnd, $"{FrontendBaseUri()}/forgot-password",
+				HttpContext.RequestAborted);
+
+			logger.LogInformation(
+				"Account {UserId} locked out until {LockoutEnd}; the owner was notified by email.",
+				user.Id, lockoutEnd);
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex,
+				"Account {UserId} was locked out but the notification could not be queued.",
+				user.Id);
+		}
+	}
+
+	/// <summary>
+	/// Hands a fresh confirmation link to an account that has never confirmed its address —
+	/// and only when the password submitted was the right one.
+	///
+	/// <para>
+	/// The page used to answer this case with "Please confirm your email address before
+	/// signing in.", which is the one message that undid the rest of the work here: every
+	/// account starts out unconfirmed, so that reply told anyone willing to try a wrong
+	/// password that the address was registered. Saying nothing would leave the real user
+	/// stuck at a page insisting their password is wrong, so they are told the one way that
+	/// reaches them and nobody else.
+	/// </para>
+	///
+	/// <para>
+	/// Gated on the password being correct for two reasons. It is the evidence that this is
+	/// the account's owner rather than somebody working through a list — and without it a run
+	/// of guesses would become a way to flood that owner's inbox. Verifying it also costs a
+	/// PBKDF2 hash, which is what keeps this path's timing in line with the rest: Identity
+	/// refuses an unconfirmed account before it verifies anything, so nothing else here would.
+	/// </para>
+	/// </summary>
+	private async Task ReconfirmEmailAsync(IdentityUser<Guid> user, string password)
+	{
+		var correct = await userManager.CheckPasswordAsync(user, password);
+		if (!correct || user.Email is null or { Length: 0 }) return;
+
+		try
+		{
+			var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+			var link = $"{FrontendBaseUri()}/confirm-email"
+				+ $"?email={Uri.EscapeDataString(user.Email)}"
+				+ $"&token={Uri.EscapeDataString(token)}";
+
+			await emails.SendEmailConfirmationReminderAsync(
+				user.Email, link, HttpContext.RequestAborted);
+
+			logger.LogInformation(
+				"User {UserId} signed in with the right password but has not confirmed their "
+				+ "address; a fresh confirmation link was sent.", user.Id);
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex,
+				"Could not queue a confirmation link for {UserId}.", user.Id);
+		}
+	}
+
+	/// <summary>
+	/// Where the admin UI is served from — the base the registration and password-reset mails
+	/// are built against too — falling back to this request's own origin when it is not
+	/// configured, so a link is never built against nothing.
+	/// </summary>
+	private string FrontendBaseUri() =>
+		(configuration["OpenIddict:BlazorClient:BaseUri"] is { Length: > 0 } configured
+			? configured
+			: $"{Request.Scheme}://{Request.Host}").TrimEnd('/');
 
 	/// <summary>
 	/// Reads the <c>organization</c> parameter the calling application put on its authorization

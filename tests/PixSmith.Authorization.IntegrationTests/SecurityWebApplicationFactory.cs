@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -40,8 +40,11 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
 
     public const string AdminEmail = "admin@test.local";
-    public const string AdminPassword = "Admin1234!";
-    public const string UserPassword = "User1234!";
+    // Twelve characters or more, and absent from the breached-password list the Identity
+    // policy now checks — "admin1234" is on it, which is why these are not the obvious
+    // Admin1234!/User1234!. See CommonPasswordValidator.
+    public const string AdminPassword = "AdminTest1234!";
+    public const string UserPassword = "UserTest1234!";
 
     /// <summary>Provisioning signing keys. Private halves never leave the test process.</summary>
     public ECDsa KeyA { get; } = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -49,8 +52,16 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     public const string KeyAId = "test-key-a";
     public const string KeyBId = "test-key-b";
 
-    public SecurityWebApplicationFactory()
+    private readonly Dictionary<string, string?> _settings;
+
+    /// <param name="settings">
+    /// Configuration applied after the defaults below, for the tests that need a setting the
+    /// rest of the suite should keep — a refresh-token cap measured in seconds, say, so the
+    /// absolute expiry can be reached without waiting thirty days.
+    /// </param>
+    public SecurityWebApplicationFactory(Dictionary<string, string?>? settings = null)
     {
+        _settings = settings ?? [];
         TestSecrets.Ensure();
         _connection.Open();
     }
@@ -84,6 +95,9 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
                 // tenancy and mask exactly what these tests are checking.
                 ["TenantBackfill:TenantName"] = "Backfill (unused)",
             });
+
+            // Last wins, so a test can override any of the above.
+            if (_settings.Count > 0) config.AddInMemoryCollection(_settings);
         });
 
         builder.ConfigureServices(services =>
@@ -110,7 +124,8 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
 
     // ── Seeding, done through the real services rather than raw SQL ───────────
 
-    public async Task<Guid> CreateUserAsync(string userName, string? platformRole = null)
+    public async Task<Guid> CreateUserAsync(
+        string userName, string? platformRole = null, bool emailConfirmed = true)
     {
         using var scope = Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser<Guid>>>();
@@ -120,7 +135,10 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             Id = Guid.NewGuid(),
             UserName = userName,
             Email = $"{userName}@test.local",
-            EmailConfirmed = true,   // SignIn.RequireConfirmedEmail is on
+
+            // SignIn.RequireConfirmedEmail is on, so an unconfirmed user cannot sign in at
+            // all — which is the case the confirmation-reminder tests need.
+            EmailConfirmed = emailConfirmed,
         };
 
         var result = await users.CreateAsync(user, UserPassword);
@@ -252,6 +270,40 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             ?? throw new InvalidOperationException($"no client '{clientId}'.");
 
         return [.. await apps.GetPermissionsAsync(app)];
+    }
+
+    /// <summary>
+    /// When the user's current refresh token expires, read from the token store.
+    ///
+    /// <para>
+    /// Refresh tokens are encrypted JWEs, so a test cannot decode one to look at its expiry —
+    /// and the store is where OpenIddict enforces it anyway. Rolling refresh tokens mean the
+    /// redeemed ones are still present, so only the valid entry counts.
+    /// </para>
+    /// </summary>
+    public async Task<DateTimeOffset?> RefreshTokenExpiryAsync(Guid userId)
+    {
+        using var scope = Services.CreateScope();
+        var tokens = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+
+        await foreach (var token in tokens.FindBySubjectAsync(userId.ToString()))
+        {
+            // The store keeps the RFC 8693 identifier
+            // ("urn:ietf:params:oauth:token-type:refresh_token"), not the short hint a client
+            // sends, so this matches the suffix rather than hard-coding either spelling.
+            var type = await tokens.GetTypeAsync(token);
+            if (type is null
+                || !type.EndsWith(TokenTypeHints.RefreshToken, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (await tokens.GetStatusAsync(token) != Statuses.Valid) continue;
+
+            return await tokens.GetExpirationDateAsync(token);
+        }
+
+        return null;
     }
 
     /// <summary>Null when no client with that id exists.</summary>

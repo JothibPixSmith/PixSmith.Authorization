@@ -8,6 +8,7 @@ using PixSmith.Authorization.API.Security;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
 using System.Security.Claims;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -15,7 +16,10 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace PixSmith.Authorization.API.Controllers;
 
 [ApiExplorerSettings(IgnoreApi = true)]
-public sealed class ConnectController(IConnectService connectService) : Controller
+public sealed class ConnectController(
+	IConnectService connectService,
+	Microsoft.Extensions.Options.IOptions<RefreshTokenOptions> refreshTokens,
+	TimeProvider clock) : Controller
 {
 	// ─── Authorization Endpoint ───────────────────────────────────────────────
 
@@ -102,7 +106,32 @@ public sealed class ConnectController(IConnectService connectService) : Controll
 
 			var identity = await connectService.RefreshIdentityAsync(
 				user, principal!, request.ClientId, decision.Context);
-			return SignIn(new ClaimsPrincipal(identity), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+			// ── CR-8 ────────────────────────────────────────────────────────
+			// The chain of refresh tokens gets an absolute deadline, counted from the grant
+			// that started it and carried on the principal. Without it every refresh issued a
+			// token whose lifetime started over, so a client that kept refreshing never had to
+			// authenticate again — and nor did a thief who kept using a stolen refresh token.
+			// Applies to this first exchange too: that is where the deadline is stamped.
+			var chain = RefreshTokenPolicy.Evaluate(
+				principal!, clock.GetUtcNow(), refreshTokens.Value);
+
+			if (chain.Expired)
+			{
+				return Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+				{
+					[OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+					[OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+						"This authorization has reached its maximum lifetime. Sign in again.",
+				}), OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+			}
+
+			RefreshTokenPolicy.Apply(identity, chain);
+
+			var refreshed = new ClaimsPrincipal(identity);
+			refreshed.SetRefreshTokenLifetime(chain.Lifetime);
+
+			return SignIn(refreshed, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 		}
 
 		if (request.IsClientCredentialsGrantType())

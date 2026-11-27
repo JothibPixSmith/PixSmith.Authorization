@@ -77,18 +77,39 @@ public static class InfrastructureServiceExtensions
 		var pwd = configuration.GetSection("Identity:Password");
 		var lockout = configuration.GetSection("Identity:Lockout");
 
+		// The breached-password list, read once and held for the process. Checked by the
+		// validator registered on the Identity builder below, so it applies to registration,
+		// password change, reset and the admin seeder alike — see CommonPasswordValidator.
+		services.Configure<PixSmith.Authorization.Services.Security.CommonPasswordOptions>(
+			configuration.GetSection(
+				PixSmith.Authorization.Services.Security.CommonPasswordOptions.SectionName));
+		services.AddSingleton<PixSmith.Authorization.Services.Security.CommonPasswordList>();
+
+		// Equalises the cost of a failed sign-in so the clock cannot be used to tell whether
+		// an account exists. See DummyPasswordVerifier and LoginController.
+		services.AddSingleton<Security.DummyPasswordVerifier>();
+
 		services.AddIdentity<IdentityUser<Guid>, IdentityRole<Guid>>(options =>
 		{
-			options.Password.RequiredLength          = pwd.GetValue<int>("RequiredLength", 8);
-			options.Password.RequireDigit            = pwd.GetValue<bool>("RequireDigit", true);
-			options.Password.RequireUppercase        = pwd.GetValue<bool>("RequireUppercase", true);
-			options.Password.RequireNonAlphanumeric  = pwd.GetValue<bool>("RequireNonAlphanumeric", true);
+			// Length is the requirement; composition is not (ASVS 6.2.5). Demanding a digit,
+			// an uppercase letter and a symbol refused long passphrases while waving through
+			// Password1!, so the rules selected for the weakest password that satisfied them.
+			// What stands in their place is the breached-password list below, which refuses
+			// the passwords those rules were meant to describe. Still configurable: a
+			// deployment can turn them back on, but the defaults here are off.
+			options.Password.RequiredLength          = pwd.GetValue<int>("RequiredLength", 12);
+			options.Password.RequireDigit            = pwd.GetValue<bool>("RequireDigit", false);
+			options.Password.RequireUppercase        = pwd.GetValue<bool>("RequireUppercase", false);
+			options.Password.RequireLowercase        = pwd.GetValue<bool>("RequireLowercase", false);
+			options.Password.RequireNonAlphanumeric  = pwd.GetValue<bool>("RequireNonAlphanumeric", false);
 			options.Lockout.MaxFailedAccessAttempts  = lockout.GetValue<int>("MaxFailedAccessAttempts", 5);
 			options.Lockout.DefaultLockoutTimeSpan   = TimeSpan.FromMinutes(lockout.GetValue<int>("DefaultLockoutTimeSpanMinutes", 15));
 			options.User.RequireUniqueEmail          = true;
 			options.SignIn.RequireConfirmedEmail      = true;
 		})
 		.AddEntityFrameworkStores<ApplicationDbContext>()
+		.AddPasswordValidator<
+			PixSmith.Authorization.Services.Security.CommonPasswordValidator<IdentityUser<Guid>>>()
 		.AddDefaultTokenProviders();
 
 		// The application cookie is the shared SSO session. /connect/authorize challenges
@@ -379,6 +400,11 @@ public static class InfrastructureServiceExtensions
 			configuration.GetSection(TenantBackfillOptions.SectionName));
 		services.Configure<TenantEnforcementOptions>(
 			configuration.GetSection(TenantEnforcementOptions.SectionName));
+
+		// The absolute cap on a chain of refresh tokens. Without it a client that keeps
+		// refreshing never has to authenticate again. See RefreshTokenPolicy.
+		services.Configure<RefreshTokenOptions>(
+			configuration.GetSection(RefreshTokenOptions.SectionName));
 		services.TryAddSingleton(TimeProvider.System);
 		services.AddScoped<IProvisioningAuthorizer, ProvisioningAuthorizer>();
 

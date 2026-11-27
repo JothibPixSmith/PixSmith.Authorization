@@ -54,6 +54,36 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ── Admin seed password ──────────────────────────────────────────────────────
+# Checked here, before anything starts. The seeder refuses a password the Identity policy
+# turns down — 12 characters and not one of the breached ones — and refusing it is right, but
+# finding out means a container that boots, throws and dies, with the reason in podman logs.
+# The same check up front costs one line of output instead.
+if [ -n "${ADMIN_SEED_PASSWORD:-}" ]; then
+    COMMON_PASSWORDS="$REPO_ROOT/src/PixSmith.Authorization.Services/Security/common-passwords.txt"
+
+    if [ "${#ADMIN_SEED_PASSWORD}" -lt 12 ]; then
+        die "ADMIN_SEED_PASSWORD in .env is ${#ADMIN_SEED_PASSWORD} characters; the Identity
+     policy requires 12. No digit, uppercase letter or symbol is needed — length and not
+     being a known-breached password are the whole policy (Identity:Password:*)."
+    fi
+
+    if [ -f "$COMMON_PASSWORDS" ]; then
+        # Lowercased, and again with the outer punctuation stripped: the same two comparisons
+        # CommonPasswordValidator makes, so this agrees with the server rather than guessing.
+        # Piped rather than passed as an argument, to keep the password out of the process list.
+        seed_lowered="$(printf '%s' "$ADMIN_SEED_PASSWORD" | tr 'A-Z' 'a-z')"
+        seed_stripped="$(printf '%s' "$seed_lowered" | sed -E 's/^[^a-z0-9]+//; s/[^a-z0-9]+$//')"
+
+        if printf '%s\n' "$seed_lowered" "$seed_stripped" \
+            | grep -qixFf - "$COMMON_PASSWORDS"; then
+            die "ADMIN_SEED_PASSWORD in .env is on the breached-password list the server
+     checks, so seeding would fail at startup. Pick something else — a passphrase of
+     several unrelated words clears both bars."
+        fi
+    fi
+fi
+
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH."
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable. Is it running?"
 

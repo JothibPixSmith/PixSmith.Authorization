@@ -92,6 +92,36 @@ RATE_LIMIT_WINDOW="${RATE_LIMIT_WINDOW:-60}"
 ALLOW_PKCE_EXEMPT="${STAGING_ALLOW_PKCE_EXEMPT:-false}"
 case "$ALLOW_PKCE_EXEMPT" in true|false) ;; *) die "STAGING_ALLOW_PKCE_EXEMPT must be true or false." ;; esac
 
+# Refresh-token lifetimes. Production values by default, for the same reason the rate limits
+# are: staging is only useful if it behaves like production. But a check that has to *reach*
+# the absolute cap cannot wait thirty days, so both are overridable:
+#
+#   STAGING_REFRESH_ABSOLUTE_SECONDS=120 ./staging/start.sh   # cap reached in two minutes
+#   STAGING_REFRESH_SLIDING_SECONDS=0 ./staging/start.sh      # exp pinned to the deadline,
+#                                                             # identical across a refresh
+#   ./staging/start.sh                                        # production values again
+#
+# Sliding=0 is the cheap way to observe the cap: with no idle timeout every refresh token is
+# pinned to the original grant's deadline, so exp does not move however often it is refreshed.
+# The cost is that the idle timeout is gone, which is why it is not the default.
+REFRESH_ABSOLUTE_DEFAULT=2592000   # 30 days — keep in step with appsettings.json
+REFRESH_SLIDING_DEFAULT=1209600    # 14 days
+
+REFRESH_ABSOLUTE_SECONDS="${STAGING_REFRESH_ABSOLUTE_SECONDS:-$REFRESH_ABSOLUTE_DEFAULT}"
+REFRESH_SLIDING_SECONDS="${STAGING_REFRESH_SLIDING_SECONDS:-$REFRESH_SLIDING_DEFAULT}"
+
+case "$REFRESH_ABSOLUTE_SECONDS" in
+    ''|*[!0-9]*) die "STAGING_REFRESH_ABSOLUTE_SECONDS must be a whole number of seconds." ;;
+esac
+case "$REFRESH_SLIDING_SECONDS" in
+    ''|*[!0-9]*) die "STAGING_REFRESH_SLIDING_SECONDS must be a whole number of seconds (0 pins exp to the absolute deadline)." ;;
+esac
+
+# Zero means "fall back to the default" to the server, not "no cap", so saying it here would
+# quietly get you a thirty-day cap when you asked for none. Refuse it instead.
+[ "$REFRESH_ABSOLUTE_SECONDS" -gt 0 ] 2>/dev/null \
+    || die "STAGING_REFRESH_ABSOLUTE_SECONDS must be greater than zero: the server treats a non-positive cap as unset and uses its default."
+
 step() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -287,6 +317,8 @@ $ENGINE run -d --name "$SERVER_CONTAINER" \
     -e RateLimiting__Enabled="$RATE_LIMITING_ENABLED" \
     -e RateLimiting__Auth__PermitLimit="$RATE_LIMIT_PERMITS" \
     -e RateLimiting__Auth__WindowSeconds="$RATE_LIMIT_WINDOW" \
+    -e RefreshTokens__AbsoluteLifetimeSeconds="$REFRESH_ABSOLUTE_SECONDS" \
+    -e RefreshTokens__SlidingLifetimeSeconds="$REFRESH_SLIDING_SECONDS" \
     -e AdminSeed__Email="$ADMIN_EMAIL" \
     -e AdminSeed__Username=admin \
     -e AdminSeed__Password="$ADMIN_PASSWORD" \
@@ -378,5 +410,11 @@ printf '  tear down     ./staging/stop.sh   (--purge to delete data and secrets)
 if [ "$ALLOW_PKCE_EXEMPT" = true ]; then
     warn "PKCE exemptions are ON. Delete the test client when done (PixSmith.PenTesting: ./tools/staging/seed-fixtures.py oidf-client delete)"
     warn "and restart without STAGING_ALLOW_PKCE_EXEMPT."
+    printf '\n'
+fi
+if [ "$REFRESH_ABSOLUTE_SECONDS" != "$REFRESH_ABSOLUTE_DEFAULT" ] \
+    || [ "$REFRESH_SLIDING_SECONDS" != "$REFRESH_SLIDING_DEFAULT" ]; then
+    warn "Refresh-token lifetimes are NOT production values: absolute ${REFRESH_ABSOLUTE_SECONDS}s, sliding ${REFRESH_SLIDING_SECONDS}s (production: ${REFRESH_ABSOLUTE_DEFAULT}s / ${REFRESH_SLIDING_DEFAULT}s)."
+    warn "Tokens already issued keep the deadline they were stamped with; restart without the overrides and re-authenticate for production behaviour."
     printf '\n'
 fi

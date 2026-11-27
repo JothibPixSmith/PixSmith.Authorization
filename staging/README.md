@@ -84,6 +84,37 @@ from the same address. Partitioning is by client IP, which is only meaningful be
 server refuses to believe `X-Forwarded-For` from anyone but the configured proxy — the stack
 asserts that at startup.
 
+## Refresh-token lifetimes during a pen test
+
+A chain of refresh tokens dies 30 days after the original grant however often it is refreshed,
+and any one token dies after 14 days unused. Staging runs those production values, which makes
+the absolute cap true but unobservable: nothing is going to wait a month to see it.
+
+Both are overridable, and `start.sh` warns on the way out when they are not production values:
+
+```bash
+# Reach the cap in two minutes. Refreshes succeed, then answer invalid_grant.
+STAGING_REFRESH_ABSOLUTE_SECONDS=120 ./staging/start.sh
+
+# No idle timeout: every refresh token is pinned to the original grant's deadline, so exp is
+# identical before and after a refresh. The cheapest way to show the cap exists at all.
+STAGING_REFRESH_SLIDING_SECONDS=0 ./staging/start.sh
+
+./staging/start.sh                 # production values again
+```
+
+Two things to know:
+
+- **Re-authenticate after changing them.** The deadline is stamped into the refresh token at
+  the grant, so a token issued under the old setting keeps the old deadline. Restarting the
+  stack does not move it — getting a fresh one does.
+- **`STAGING_REFRESH_ABSOLUTE_SECONDS=0` is refused.** The server reads a non-positive cap as
+  "unset" and falls back to 30 days, so accepting 0 here would hand you a month-long cap when
+  you asked for none. Use a large number if that is what you want.
+
+Confirmed on this stack with a two-minute cap: refreshes at 0, 20, 40, 60, 80 and 100 seconds
+all returned 200, and the one at 120 seconds returned `400 invalid_grant`.
+
 ## Container engine
 
 These scripts use **podman** by default. `CONTAINER_ENGINE=docker ./staging/start.sh` switches

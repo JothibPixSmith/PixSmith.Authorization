@@ -91,6 +91,61 @@ a flood against one cannot deny the others to the same address.
 byte-identical 200 whether or not the address was taken; the real owner is told by email instead.
 Password-policy failures are still reported, since they disclose nothing about other accounts.
 
+**Nor can password reset.** `ResetPasswordAsync` answers `Invalid or expired reset request.` for
+an unknown address, a token that was never valid and an expired one alike — it used to pass
+Identity's own `Invalid token.` through for accounts that existed. The second, subtler oracle is
+the order of the checks: validating the new password *after* the lookup means only real accounts
+are ever told their password is too short, so the policy is checked **first**, against a
+placeholder user carrying the submitted address. Policy failures are still reported in full, for
+the same reason registration reports them.
+
+**Nor can the login page, by message or by clock.** One wording — `Invalid email or password.` —
+covers no such account, a wrong password *and* a locked-out account; the owner of a locked
+account is told by email (`SendAccountLockedAsync`, sent once, on the attempt that trips the
+lock, which is why `LoginController` reads the lockout end *before* the sign-in attempt). The
+wording alone is not enough: Identity verifies no password for an address it cannot find, nor
+for an account already locked, which measured 4 ms against a real account's 72 ms — as good an
+oracle as any message. Both paths call `DummyPasswordVerifier.Verify`, which performs a real
+PBKDF2 verification against a hash of a random password, built once from the same
+`PasswordHasherOptions` Identity uses. Measured after the change: 56.9 ms against 53.5 ms, with
+the samples overlapping. Any new early return from the login form owes that call.
+
+**An unconfirmed address is refused in those same words too.** Saying "please confirm your email
+address" named the one thing every account has in common when it is created, so a single wrong
+password against any address revealed whether it was registered. The real user still has to
+learn why they cannot get in, so `ReconfirmEmailAsync` emails them a fresh confirmation link —
+but only when the password they submitted was *correct*. That gate does three jobs: it is the
+evidence that this is the owner and not somebody working a list, it stops a run of guesses
+becoming a flood of mail to that owner, and verifying the password is what keeps this path's
+timing level, since Identity refuses an unconfirmed account before it hashes anything. Note that
+Identity records no failed-access attempt for such an account, so lockout does not apply to one
+that was never confirmed — pre-existing, and not addressed here.
+
+**The password policy is a length and a breach check, not a composition puzzle.** `RequireDigit`,
+`RequireUppercase`, `RequireLowercase` and `RequireNonAlphanumeric` are all off and
+`RequiredLength` is 12 (ASVS 6.2.5): those rules refused long passphrases while accepting
+`Password1!`, so what they selected for was the weakest password that satisfied them. In their
+place `CommonPasswordValidator` refuses anything on a list of 19,179 breached passwords
+(ASVS 6.2.4), embedded in `PixSmith.Authorization.Services` and built from four MIT-licensed
+SecLists files. It compares the password as written *and* with its outer punctuation stripped —
+that second comparison is what catches `Password1!`, which is `password1` in the costume the old
+rules demanded. The list is read at startup, not on first use, and an empty or missing one
+throws rather than quietly accepting everything; `Identity:Password:CommonPasswords:ListPath`
+swaps in a larger list without a rebuild. Because it is registered as an `IPasswordValidator`,
+it applies to registration, change, reset and the admin seeder alike. Note that test fixtures
+and seeded passwords must clear both bars: `admin1234` is on the list, which is why the
+integration suite's admin password is `AdminTest1234!`.
+
+**A password the policy refuses must fail without leaving debris.** `AccountService.RegisterAsync`
+writes the `UserProfile` before the `IdentityUser`, so a refusal in between left a profile row
+attached to no account — invisible, because `ExistsAsync`, `CountAsync` and `GetAllAsync` all
+start from Identity, and never cleaned up. It now deletes the domain half when
+`userManager.CreateAsync` fails. `AdminUserSeeder` runs the password validators itself *before*
+registering, so a bad `AdminSeed:Password` fails startup having written nothing (the message
+says so, and a test asserts that phrase). `debug/start.sh` checks the same two rules against
+`.env` before it starts a container, using the same list file, so the answer comes from the
+script rather than from a container that boots and dies.
+
 **The login page executes no JavaScript.** It is served with
 `default-src 'none'; style-src 'self'; …` and its styles come from `/css/auth.css` in the API's
 own `wwwroot`, not a CDN. If you add a utility class to a view, add the rule to that file — there
@@ -142,6 +197,26 @@ one instance, logout on one node leaves a replayed cookie working on another unt
 expires, which is exactly the window the server-side session exists to close. `AuthenticationTicketCleanup` sweeps expired rows, and
 `POST /Account/LogoutEverywhere` deletes every session for the user *and* rotates the security
 stamp. `Sessions:*` configures the sweep interval and the stamp revalidation window.
+
+**A chain of refresh tokens has an absolute deadline.** Each refresh used to issue a token
+whose lifetime started from that moment, so a client that kept refreshing never had to
+authenticate again — and nor did a thief with a stolen refresh token, since the sliding window
+only ever punishes going idle (ASVS 10.4.8). `RefreshTokenPolicy` carries the deadline on the
+principal as the `refresh_expires_at` claim: it is written into the refresh token, read back on
+the next exchange, and handed forward unchanged, so nothing has to be stored server-side to
+remember when the chain began. The claim is given **no destination** in
+`ConnectService.GetDestinations` — the `_ =>` default there publishes unknown claims in the
+access token, which is exactly what this one must not do. Past the deadline the exchange is
+refused with `invalid_grant`. `RefreshTokens:AbsoluteLifetimeSeconds` is the cap (30 days) and
+`RefreshTokens:SlidingLifetimeSeconds` the idle timeout (14 days, OpenIddict's own default);
+each token gets whichever is shorter. A sliding value of 0 pins every token to the absolute
+deadline, which keeps `exp` identical across a refresh at the cost of the idle timeout. A cap
+of 0 falls back to the default rather than switching the control off.
+
+Note that `OAuthClient.AbsoluteRefreshTokenLifetimeSeconds` is **not** what feeds this, despite
+being the obvious candidate. That whole registry (`OAuthClientRegistration`, written by
+`/api/admin/clients`) never reaches OpenIddict, so clients created there cannot authenticate at
+all and no real client has a row — reading the cap from it would mean no cap in practice.
 
 **Signing out everywhere revokes tokens, not just sessions.** A signed-in user holds three
 credentials and the cookie is only one. `TokenRevocation` marks every token entry and

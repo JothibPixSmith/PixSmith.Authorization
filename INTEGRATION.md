@@ -477,6 +477,11 @@ Three things had to be fixed before an external app could integrate at all:
   been *granted* `api`. If your client needs to read or update the signed-in user's profile, or
   administer a company's members, ask for `api` in its authorization request. `admin` is
   separate and gates `/api/admin/*` along with the `Admin` role.
+- **Refresh tokens expire absolutely, so plan for re-authentication.** A chain of refresh
+  tokens dies 30 days after the original grant (`RefreshTokens:AbsoluteLifetimeSeconds`) however
+  often it was refreshed, and any one token dies after 14 days unused. Past the cap
+  `/connect/token` answers `invalid_grant`, and your app must send the user back through
+  `/connect/authorize` rather than treating it as a transient error.
 - **Revoke the refresh token when your app logs a user out.** Every client created through the
   admin API is granted `/connect/revoke` (RFC 7009), and `POST token=<refresh token>&client_id=…`
   is all it takes. Ending your app's own session leaves the refresh token usable otherwise — the

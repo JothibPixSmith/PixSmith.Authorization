@@ -1,4 +1,4 @@
-using PixSmith.Authorization.Domain.Results;
+﻿using PixSmith.Authorization.Domain.Results;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -9,6 +9,7 @@ namespace PixSmith.Authorization.Services;
 
 public sealed class AccountService(
     IUserService userService,
+    PixSmith.Authorization.Repositories.Interfaces.IUserRepository userRepository,
     UserManager<IdentityUser<Guid>> userManager,
     IEmailService emailService,
     IConfiguration configuration,
@@ -91,6 +92,13 @@ public sealed class AccountService(
         var identityResult = await userManager.CreateAsync(identityUser, request.Password);
         if (!identityResult.Succeeded)
         {
+            // Roll back the domain half. The UserProfile is written first and the IdentityUser
+            // second, so a refusal here — a password the policy turns down, most often — would
+            // otherwise leave a profile row with no account attached: invisible to every query
+            // that starts from Identity, and never cleaned up. More likely now that the policy
+            // asks for 12 characters and checks a breach list.
+            await userRepository.DeleteAsync(dto.Id, ct);
+
             if (identityResult.Errors.Any(e => DuplicateCodes.Contains(e.Code, StringComparer.OrdinalIgnoreCase)))
             {
                 logger.LogInformation(

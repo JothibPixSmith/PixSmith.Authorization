@@ -219,6 +219,11 @@ public sealed class ConnectService(
             TenantClaims.OrganizationId or TenantClaims.OrganizationSlug or TenantClaims.Roles
                 => [Destinations.AccessToken, Destinations.IdentityToken],
 
+            // No destination: kept inside the authorization code and the refresh token, where
+            // the next exchange reads it back, and never published to a client. It is the
+            // server's own bookkeeping — see RefreshTokenPolicy.
+            RefreshTokenPolicy.DeadlineClaim => [],
+
             _ => [Destinations.AccessToken]
         };
 }

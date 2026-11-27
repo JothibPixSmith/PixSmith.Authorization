@@ -17,4 +17,12 @@
     <PackageReference Include="MailKit" Version="4.17.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The breached-password list CommonPasswordValidator checks (ASVS 6.2.4). Embedded, so
+         it travels with the assembly and is present in tests and containers without a copy
+         step; LogicalName is pinned so moving the file cannot silently empty the list. -->
+    <EmbeddedResource Include="Security/common-passwords.txt"
+                      LogicalName="PixSmith.Authorization.Services.CommonPasswords.txt" />
+  </ItemGroup>
+
 </Project>

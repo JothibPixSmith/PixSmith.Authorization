@@ -59,6 +59,28 @@ using (var scope = app.Services.CreateScope())
 	await db.Database.MigrateAsync();
 }
 
+// Read the breached-password list now rather than on the first registration. It is a
+// singleton, so resolving it here forces the file open: a missing or empty list throws, and
+// startup is where that has to surface — not in the middle of someone choosing a password,
+// and never by silently accepting every password instead.
+{
+	var commonPasswords = app.Services
+		.GetRequiredService<PixSmith.Authorization.Services.Security.CommonPasswordList>();
+
+	if (commonPasswords.Enabled)
+	{
+		app.Logger.LogInformation(
+			"Breached-password check active: {Count} entries from {Source}.",
+			commonPasswords.Count, commonPasswords.Source);
+	}
+	else
+	{
+		app.Logger.LogWarning(
+			"Breached-password check is disabled; Identity:Password:CommonPasswords:Enabled is "
+			+ "false. Passwords such as Password1! will be accepted.");
+	}
+}
+
 if (app.Environment.IsDevelopment())
 {
 	app.UseSwagger();

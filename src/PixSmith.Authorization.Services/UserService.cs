@@ -159,19 +159,83 @@ public sealed class UserService : IUserService
 		return Result.Success();
 	}
 
+	/// <summary>
+	/// One answer for an address with no account, a token that was never valid, and a token
+	/// that has expired.
+	///
+	/// <para>
+	/// It used to differ: an unknown address got this message, while a real account with a bad
+	/// token got Identity's own "Invalid token." — which is all an attacker needs to sort a
+	/// list of addresses into those worth attacking and the rest. Password-policy failures are
+	/// still reported in full, because they describe the submitted password and disclose
+	/// nothing about any account.
+	/// </para>
+	/// </summary>
+	private const string InvalidResetRequest = "Invalid or expired reset request.";
+
 	public async Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
 	{
 		if (request.NewPassword != request.ConfirmNewPassword)
 			return Result.Failure("Passwords do not match.");
 
+		// Checked before anything is looked up, deliberately. In the natural order — find the
+		// user, then let ResetPasswordAsync validate — policy errors come back only for
+		// addresses that have an account, so "your password needs a digit" against one address
+		// and "invalid or expired" against another says which exists just as plainly as the
+		// two different failure messages did.
+		var policy = await ValidatePasswordPolicyAsync(request.Email, request.NewPassword);
+		if (!policy.IsSuccess) return policy;
+
 		var identityUser = await this.userManager.FindByEmailAsync(request.Email);
-		if (identityUser is null) return Result.Failure("Invalid or expired reset request.");
 
-		var result = await this.userManager.ResetPasswordAsync(identityUser, request.Token, request.NewPassword);
-		if (!result.Succeeded)
-			return Result.Failure(string.Join("; ", result.Errors.Select(e => e.Description)));
+		if (identityUser is not null)
+		{
+			var result = await this.userManager.ResetPasswordAsync(
+				identityUser, request.Token, request.NewPassword);
 
-		return Result.Success();
+			if (result.Succeeded) return Result.Success();
+
+			// Logged rather than returned: the codes say whether this was a bad token, a
+			// replayed one or something else, which is worth having on the server and not in
+			// the response.
+			this.logger.LogInformation(
+				"Password reset refused for {UserId}: {Errors}",
+				identityUser.Id, string.Join("; ", result.Errors.Select(e => e.Code)));
+		}
+		else
+		{
+			this.logger.LogInformation(
+				"Password reset attempted for an address with no account.");
+		}
+
+		return Result.Failure(InvalidResetRequest);
+	}
+
+	/// <summary>
+	/// Runs Identity's configured password validators — length, and the breached-password list
+	/// (see CommonPasswordValidator) — against a password whose account may not exist.
+	///
+	/// <para>
+	/// The validators take a user, so this builds a placeholder carrying the submitted address.
+	/// A validator that compares the password against the username therefore behaves as it
+	/// would for the real account.
+	/// </para>
+	/// </summary>
+	private async Task<Result> ValidatePasswordPolicyAsync(string email, string password)
+	{
+		var placeholder = new IdentityUser<Guid> { UserName = email, Email = email };
+
+		var errors = new List<string>();
+		foreach (var validator in this.userManager.PasswordValidators)
+		{
+			var result = await validator.ValidateAsync(this.userManager, placeholder, password);
+			if (!result.Succeeded)
+				errors.AddRange(result.Errors.Select(e => e.Description));
+		}
+
+		return errors.Count == 0
+			? Result.Success()
+			: Result.Failure(string.Join("; ", errors.Distinct()));
 	}
 
 	public async Task<Result> ConfirmEmailAsync(string email, string token, CancellationToken ct = default)
