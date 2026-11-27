@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OpenIddict.Validation.AspNetCore;
 using PixSmith.Authorization.API.Security;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services.Interfaces;
@@ -18,10 +17,17 @@ namespace PixSmith.Authorization.API.Controllers;
 /// rejected there before any per-action check could run. The two are genuinely different
 /// authorities: this one is scoped to a single tenancy, established from the caller's own token.
 /// </para>
+///
+/// <para>
+/// The class-level policy is <c>ApiAccess</c>, not a bare scheme: company administration is API
+/// authority, so the token must carry the <c>api</c> scope. With only the scheme named, any
+/// valid token reached this controller — including one issued to an unrelated application that
+/// was never granted API access at all.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("api/organizations")]
-[Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
+[Authorize(Policy = "ApiAccess")]
 public sealed class OrganizationController(
     ITenantAccessService tenantAccessService) : ControllerBase
 {

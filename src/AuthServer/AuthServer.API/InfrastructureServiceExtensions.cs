@@ -299,12 +299,21 @@ public static class InfrastructureServiceExtensions
 
 		services.AddAuthorization(options =>
 		{
-			// Requires a valid bearer token with the "api" scope.
+			// Requires a valid bearer token that was actually granted the "api" scope.
+			//
+			// It previously read RequireClaim(scope, OfflineAccess, "api"). RequireClaim with
+			// several values means *any* of them, so a token carrying only offline_access
+			// satisfied it — and offline_access is a request for a refresh token, not a grant
+			// of API authority. Worse, the policy was defined and never applied: the API
+			// controllers used [Authorize(AuthenticationSchemes = …)], which asks only whether
+			// the token is valid, so any token from any client reached /api. A token minted for
+			// an unrelated application could read and write a user's profile and administer a
+			// company's members.
 			options.AddPolicy("ApiAccess", policy =>
 			{
 				policy.AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
 				policy.RequireAuthenticatedUser();
-				policy.RequireClaim(Claims.Private.Scope, Scopes.OfflineAccess, "api");
+				policy.RequireClaim(Claims.Private.Scope, "api");
 			});
 
 			// Administering the authorization server requires BOTH the "Admin" role and the

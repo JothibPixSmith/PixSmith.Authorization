@@ -472,5 +472,16 @@ Three things had to be fixed before an external app could integrate at all:
   administer — including one issued to an unrelated application they signed in to — and the
   scope without the role means a machine client could administer with no human involved. If
   you build another admin tool, grant it the `admin` scope explicitly.
+- **The auth server's own `/api` surface requires the `api` scope.** `/api/account/*` and
+  `/api/organizations/*` use the `ApiAccess` policy: a valid token is not enough, it must have
+  been *granted* `api`. If your client needs to read or update the signed-in user's profile, or
+  administer a company's members, ask for `api` in its authorization request. `admin` is
+  separate and gates `/api/admin/*` along with the `Admin` role.
+- **Revoke the refresh token when your app logs a user out.** Every client created through the
+  admin API is granted `/connect/revoke` (RFC 7009), and `POST token=<refresh token>&client_id=…`
+  is all it takes. Ending your app's own session leaves the refresh token usable otherwise — the
+  auth server cannot know your app considers the user signed out. Introspection is separate and
+  opt-in (`allowIntrospection: true` on a confidential client), because it asks about tokens the
+  caller was never given.
 - **Add a consent screen** if you ever onboard a third-party app. `ConnectController.Authorize` auto-approves every request, which is correct for first-party apps you own and wrong for anyone else's.
 - **Persist data protection keys** (`DataProtection:KeyPath`) if you run more than one instance.

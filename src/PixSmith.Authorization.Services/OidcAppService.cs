@@ -52,10 +52,13 @@ public sealed class OidcAppService(
             var exemption = CheckPkceExemption(request.PkceExempt, request.ClientType, request.GrantTypes);
             if (!exemption.IsSuccess) return Result<OidcAppDto>.Failure(exemption.Error!);
 
+            var introspection = CheckIntrospection(request.AllowIntrospection, request.ClientType);
+            if (!introspection.IsSuccess) return Result<OidcAppDto>.Failure(introspection.Error!);
+
             var descriptor = BuildDescriptor(
                 request.ClientId, request.ClientSecret, request.DisplayName, request.ClientType,
                 request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes,
-                request.PkceExempt);
+                request.PkceExempt, request.AllowIntrospection);
 
             if (!string.IsNullOrWhiteSpace(request.JsonWebKeySet))
             {
@@ -105,10 +108,13 @@ public sealed class OidcAppService(
             var exemption = CheckPkceExemption(request.PkceExempt, existing, request.GrantTypes);
             if (!exemption.IsSuccess) return Result.Failure(exemption.Error!);
 
+            var introspection = CheckIntrospection(request.AllowIntrospection, existing);
+            if (!introspection.IsSuccess) return Result.Failure(introspection.Error!);
+
             var descriptor = BuildDescriptor(
                 clientId, preservedSecret, request.DisplayName, existing,
                 request.RedirectUris, request.PostLogoutRedirectUris, request.Scopes, request.GrantTypes,
-                request.PkceExempt);
+                request.PkceExempt, request.AllowIntrospection);
 
             // Public keys, unlike the secret, really can be read back — so "omitted means keep
             // what is registered" is honestly implementable here rather than a polite fiction.
@@ -335,6 +341,28 @@ public sealed class OidcAppService(
     }
 
     /// <summary>
+    /// Refuses introspection for a public client rather than granting a permission that cannot
+    /// work. The introspection endpoint authenticates the caller — a client with no credentials
+    /// has nothing to authenticate with, so the grant would look configured and fail at the
+    /// endpoint. Said plainly here instead, for the same reason the password grant is.
+    /// </summary>
+    private static Result CheckIntrospection(bool allowIntrospection, string clientType)
+    {
+        if (!allowIntrospection) return Result.Success();
+
+        if (!string.Equals(clientType, OpenIddictConstants.ClientTypes.Confidential,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure(
+                "Introspection requires a confidential client: the introspection endpoint "
+                + "authenticates the caller, and a public client has no credentials to "
+                + "authenticate with. Revocation is granted to every client and needs no flag.");
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Matches the device authorization grant by either its RFC 8628 URN or the short
     /// "device_code" alias.
     /// </summary>
@@ -344,7 +372,8 @@ public sealed class OidcAppService(
     private static OpenIddictApplicationDescriptor BuildDescriptor(
         string clientId, string? clientSecret, string? displayName, string clientType,
         List<string> redirectUris, List<string> postLogoutUris,
-        List<string> scopes, List<string> grantTypes, bool pkceExempt)
+        List<string> scopes, List<string> grantTypes, bool pkceExempt,
+        bool allowIntrospection)
     {
         var descriptor = new OpenIddictApplicationDescriptor
         {
@@ -355,6 +384,21 @@ public sealed class OidcAppService(
         };
 
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Token);
+
+        // ── CR-7 ────────────────────────────────────────────────────────────
+        // Revocation, for every client. Without it no client created through the admin API
+        // could revoke its own tokens at logout (RFC 7009), so a user's refresh token outlived
+        // their logout — and a refresh token is the credential that can be exchanged for new
+        // access tokens for as long as it lives. Public clients get it too, which RFC 7009 §2.1
+        // allows: OpenIddict validates the token's presenters, so a client can only ever revoke
+        // a token that was issued to it.
+        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Revocation);
+
+        // Introspection is the other direction — asking about tokens the caller did not
+        // present — and belongs to resource servers, so it is opt-in. CheckIntrospection has
+        // already refused it for public clients.
+        if (allowIntrospection)
+            descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Introspection);
 
         if (grantTypes.Contains("authorization_code"))
             descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Authorization);

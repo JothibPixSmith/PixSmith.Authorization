@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
-using OpenIddict.Validation.AspNetCore;
 using PixSmith.Authorization.DataContext;
 using PixSmith.Authorization.Services;
 using PixSmith.Authorization.Services.Interfaces;
@@ -10,6 +9,12 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace PixSmith.Authorization.API.Controllers;
 
+/// <summary>
+/// The account API the admin UI calls. Three actions here act on the caller's own account and
+/// take the <c>ApiAccess</c> policy — a valid token is not enough, it must have been granted the
+/// <c>api</c> scope. Registration, password reset and email confirmation are deliberately
+/// anonymous: they are reached before anyone has a token.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public sealed class AccountController(
@@ -36,36 +41,36 @@ public sealed class AccountController(
     // ─── Profile ──────────────────────────────────────────────────────────────
 
     [HttpGet("me")]
-    [Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
+    [Authorize(Policy = "ApiAccess")]
     [ProducesResponseType(typeof(UserDto), 200)]
     public async Task<IActionResult> Me()
     {
-        var userId = User.GetClaim(Claims.Subject);
-        if (userId is null) return Unauthorized();
+        if (!Guid.TryParse(User.GetClaim(Claims.Subject), out var userId))
+            return Forbid();   // a client-credentials token has a client id as its subject
 
-        var result = await userService.GetByIdAsync(Guid.Parse(userId));
+        var result = await userService.GetByIdAsync(userId);
         return result.IsSuccess ? Ok(result.Value) : NotFound();
     }
 
     [HttpPut("me")]
-    [Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
+    [Authorize(Policy = "ApiAccess")]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateUserProfileRequest request)
     {
-        var userId = User.GetClaim(Claims.Subject);
-        if (userId is null) return Unauthorized();
+        if (!Guid.TryParse(User.GetClaim(Claims.Subject), out var userId))
+            return Forbid();
 
-        var result = await userService.UpdateProfileAsync(Guid.Parse(userId), request);
+        var result = await userService.UpdateProfileAsync(userId, request);
         return result.IsSuccess ? Ok(result.Value) : BadRequest(new { error = result.Error });
     }
 
     [HttpPost("change-password")]
-    [Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
+    [Authorize(Policy = "ApiAccess")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        var userId = User.GetClaim(Claims.Subject);
-        if (userId is null) return Unauthorized();
+        if (!Guid.TryParse(User.GetClaim(Claims.Subject), out var userId))
+            return Forbid();
 
-        var result = await userService.ChangePasswordAsync(Guid.Parse(userId), request);
+        var result = await userService.ChangePasswordAsync(userId, request);
         return result.IsSuccess ? Ok() : BadRequest(new { error = result.Error });
     }
 

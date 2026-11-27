@@ -216,7 +216,8 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     /// OpenIddict manager and deliberately bypasses it.
     /// </summary>
     public async Task<(bool Succeeded, string Error)> CreateOidcAppAsync(
-        string clientId, string[] grantTypes, string[] scopes, bool confidential = false)
+        string clientId, string[] grantTypes, string[] scopes, bool confidential = false,
+        bool allowIntrospection = false)
     {
         using var scope = Services.CreateScope();
         var apps = scope.ServiceProvider
@@ -231,9 +232,26 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             PostLogoutRedirectUris: [],
             Scopes: [.. scopes],
             GrantTypes: [.. grantTypes],
-            PkceExempt: false));
+            PkceExempt: false,
+            AllowIntrospection: allowIntrospection));
 
         return (result.IsSuccess, result.Error ?? string.Empty);
+    }
+
+    /// <summary>
+    /// The client's registered permission strings. Endpoint permissions are the subject of
+    /// CR-7: a grant with no matching <c>ept:…</c> permission is refused at the endpoint, so
+    /// the two have to be asserted separately.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetClientPermissionsAsync(string clientId)
+    {
+        using var scope = Services.CreateScope();
+        var apps = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+
+        var app = await apps.FindByClientIdAsync(clientId)
+            ?? throw new InvalidOperationException($"no client '{clientId}'.");
+
+        return [.. await apps.GetPermissionsAsync(app)];
     }
 
     /// <summary>Null when no client with that id exists.</summary>

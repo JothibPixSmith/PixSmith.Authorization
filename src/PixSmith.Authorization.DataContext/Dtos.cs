@@ -185,7 +185,14 @@ public sealed record CreateOidcAppRequest(
     /// Security:AllowPkceExemptClients is true (never in Production), and only for a
     /// confidential authorization-code client. For conformance-test runs; delete it afterwards.
     /// </summary>
-    bool PkceExempt = false);
+    bool PkceExempt = false,
+    /// <summary>
+    /// Grants the introspection endpoint, letting this client ask the server about *other*
+    /// clients' tokens. That is a resource server's need, not an ordinary client's, so it is
+    /// opt-in and only for confidential clients — introspection authenticates the caller.
+    /// Revocation is granted unconditionally and needs no flag.
+    /// </summary>
+    bool AllowIntrospection = false);
 
 public sealed record UpdateOidcAppRequest(
     string? DisplayName,
@@ -203,7 +210,12 @@ public sealed record UpdateOidcAppRequest(
     /// Same rules as on create. Omitting it clears an existing exemption: an edit should never
     /// keep a client free of PKCE by accident.
     /// </summary>
-    bool PkceExempt = false);
+    bool PkceExempt = false,
+    /// <summary>
+    /// Same rules as on create, and likewise not "keep what is there": an update that omits it
+    /// withdraws introspection. Losing that authority by accident is safe; keeping it is not.
+    /// </summary>
+    bool AllowIntrospection = false);
 
 // ─── Admin Dashboard ───────────────────────────────────────────────────────
 

@@ -168,6 +168,25 @@ immediately; without one the user gets a no-JavaScript confirmation page that PO
 antiforgery token. That form needs an explicit `@Html.AntiForgeryToken()` — the form tag helper
 does not inject one when the form carries a literal `action` attribute.
 
+**The `/api` surface requires the `api` scope, through a policy that is actually applied.**
+`AccountController`'s three authenticated actions and the whole of `OrganizationController`
+carry `[Authorize(Policy = "ApiAccess")]`. They previously named only the authentication
+scheme, which asks whether the token is valid and nothing more, so any token from any client
+reached the account API and company administration alike — the `ApiAccess` policy was defined
+and never used. The policy itself also accepted `offline_access` *or* `api`, because
+`RequireClaim` with several values means any of them; `offline_access` is a request for a
+refresh token and confers no API authority. A new `[Authorize]` on an `/api` endpoint takes the
+policy, not the scheme.
+
+**Clients created through the admin API can revoke their own tokens.** `OidcAppService` grants
+`ept:revocation` to every client, public ones included (RFC 7009 §2.1; OpenIddict validates
+token presenters, so a client can only revoke what was issued to it). Without it an integrating
+app could not revoke the refresh token when it logged a user out, so the token outlived the
+logout. Introspection is the other direction — asking about tokens the caller never held — so
+it is opt-in per client (`AllowIntrospection`) and refused for public clients, which have no
+credentials for an endpoint that authenticates its caller. Note that, like `PkceExempt`, an
+update that omits the flag withdraws it.
+
 **Administering the server needs both the `Admin` role and the `admin` scope.** Neither alone: the role without the scope lets any token an administrator holds administer, the scope without the role lets a machine client administer with no human involved.
 
 **Creating a tenancy requires offline signatures.** Mutating tenant endpoints demand an interactive human administrator plus a quorum of detached ECDSA signatures from keys held off the server. It fails closed when no keys are configured. See `docs/TENANT-PROVISIONING.md`.
